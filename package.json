@@ -7,6 +7,7 @@
     "dev": "vite --host",
     "build": "vite build",
     "build:single": "vite build --mode single",
+    "build:demo": "vite build --mode demo",
     "preview": "vite preview --host"
   },
   "dependencies": {

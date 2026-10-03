@@ -1,8 +1,4 @@
 import * as THREE from 'three';
-import { createWorld } from '../world/index.js';
-import { Skater } from '../character/skater.js';
-import { createUI } from '../ui/index.js';
-import { createAudio } from '../audio/index.js';
 import { createBoard } from '../board/board.js';
 import { DEFAULT_APPEARANCE, DEFAULT_BOARD } from '../core/customization.js';
 import { CollisionWorld } from './collision.js';
@@ -57,7 +53,9 @@ const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 
 export class Game {
-  constructor(canvas, uiRoot) {
+  // modules: { createWorld, Skater, createUI, createAudio } (injected so a lite demo build can swap them)
+  constructor(canvas, uiRoot, modules) {
+    const { createWorld, Skater, createUI, createAudio } = modules;
     this.canvas = canvas;
     this.settings = store.get('settings', DEFAULT_SETTINGS);
     this.appearance = store.get('appearance', DEFAULT_APPEARANCE);
@@ -381,6 +379,7 @@ export class Game {
 
   _animateSkater(dt, idle = false) {
     const c = this.controller;
+    if (this.skater.isRagdoll && c.mode !== 'bail') this.skater.endRagdoll();
     if (this.skater.isRagdoll) this.skater.updateRagdoll(dt);
     else this.skater.update(dt, c.getPose(this.pose));
     this.board.object3d.matrix.copy(c.boardMatrix(this.board.object3d.matrix));
