@@ -85,8 +85,9 @@ export class Game {
     this.board = createBoard(this.boardCfg);
     this.board.object3d.matrixAutoUpdate = false;
     this.scene.add(this.board.object3d);
-    this.skater = new Skater(this.appearance);
-    this.scene.add(this.skater.object3d);
+    // the rider model is optional (board-only mode while gameplay is tuned)
+    this.skater = Skater ? new Skater(this.appearance) : null;
+    if (this.skater) this.scene.add(this.skater.object3d);
     this.pose = {
       rider: new THREE.Matrix4(),
       board: new THREE.Matrix4(),
@@ -120,7 +121,12 @@ export class Game {
     this._syncPlaced();
 
     this.rig = new CameraRig(this.camera, this.collision);
-    this.rig.distance = 2.9 * this.settings.cameraDistance;
+    this.baseCamDistance = this.skater ? 2.9 : 2.1;
+    if (!this.skater) {
+      this.rig.height = 0.72;
+      this.rig.focusHeight = 0.28;
+    }
+    this.rig.distance = this.baseCamDistance * this.settings.cameraDistance;
     this.input = new Input(canvas);
     this.input.mouseSensitivity = this.settings.mouseSensitivity;
     this.input.invertFlickY = this.settings.invertFlickY;
@@ -137,6 +143,7 @@ export class Game {
       board: this.boardCfg,
       settings: this.settings,
       audio: this.audio,
+      boardOnly: !this.skater,
       previewHooks: {
         enter: () => (this.previewing = true),
         exit: () => (this.previewing = false),
@@ -197,7 +204,7 @@ export class Game {
     });
     ui.on('appearance', (a) => {
       this.appearance = { ...this.appearance, ...a };
-      this.skater.setAppearance(this.appearance);
+      this.skater?.setAppearance(this.appearance);
       store.set('appearance', this.appearance);
     });
     ui.on('board', (b) => {
@@ -213,7 +220,7 @@ export class Game {
       this.controller.stance = this.settings.stance;
       this.camera.fov = this.settings.cameraFov;
       this.camera.updateProjectionMatrix();
-      this.rig.distance = 2.9 * this.settings.cameraDistance;
+      this.rig.distance = this.baseCamDistance * this.settings.cameraDistance;
       this.audio.setVolumes({ master: this.settings.masterVolume, sfx: this.settings.sfxVolume, music: this.settings.musicVolume });
       this._applyQuality();
     });
@@ -273,7 +280,7 @@ export class Game {
     if (!this.introShown) {
       this.introShown = true;
       this.hintTimer = 9;
-      this.ui.setControlsHint?.('W push · A/D carve · pull the mouse back then flick forward to ollie · Esc menu');
+      this.ui.setControlsHint?.('W push · A/D carve · hold left click, pull back & flick forward, release to pop · click again to catch flips · Esc menu');
     }
   }
 
@@ -369,29 +376,40 @@ export class Game {
         // close-up turntable of the skater
         const c = this.controller.pos;
         const yaw = this.rig.heading + Math.PI + this.previewYaw;
-        _v.set(c.x + Math.sin(yaw) * 3.0, c.y + 1.15, c.z + Math.cos(yaw) * 3.0);
+        const [dist, hgt, look] = this.skater ? [3.0, 1.15, 0.95] : [1.25, 0.55, 0.08];
+        _v.set(c.x + Math.sin(yaw) * dist, c.y + hgt, c.z + Math.cos(yaw) * dist);
         this.camera.position.lerp(_v, 1 - Math.exp(-6 * dt));
-        _v2.set(c.x, c.y + 0.95, c.z);
+        _v2.set(c.x, c.y + look, c.z);
         this.camera.lookAt(_v2);
         this._animateSkater(dt, true);
         break;
       }
       default: {
         // title / paused: gentle orbit around the skater
-        if (this.mode === 'title') this.rig.orbit(dt, this.controller.pos, 6.5, 1.9, 0.1);
+        if (this.mode === 'title') this.rig.orbit(dt, this.controller.pos, this.skater ? 6.5 : 2.4, this.skater ? 1.9 : 0.7, 0.1);
         this._animateSkater(dt, true);
       }
     }
 
-    this.world.update(dt, this.controller.mode === 'bail' && this.skater.isRagdoll ? this.skater.getRagdollCenter(_v) : this.controller.pos, this.camera);
+    this.world.update(dt, this._focus(_v), this.camera);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  // what the camera / shadows follow: the ragdoll, the loose board after a bail, or the rider
+  _focus(target) {
+    const c = this.controller;
+    if (c.mode === 'bail') return this.skater?.isRagdoll ? this.skater.getRagdollCenter(target) : target.copy(c.board.pos);
+    return target.copy(c.pos);
   }
 
   _animateSkater(dt, idle = false) {
     const c = this.controller;
-    if (this.skater.isRagdoll && c.mode !== 'bail') this.skater.endRagdoll();
-    if (this.skater.isRagdoll) this.skater.updateRagdoll(dt);
-    else this.skater.update(dt, c.getPose(this.pose));
+    const sk = this.skater;
+    if (sk) {
+      if (sk.isRagdoll && c.mode !== 'bail') sk.endRagdoll();
+      if (sk.isRagdoll) sk.updateRagdoll(dt);
+      else sk.update(dt, c.getPose(this.pose));
+    }
     this.board.object3d.matrix.copy(c.boardMatrix(this.board.object3d.matrix));
     this.board.object3d.matrixWorldNeedsUpdate = true;
     this.board.setWheelSpin(c.wheelSpin);
@@ -414,7 +432,7 @@ export class Game {
       }
     }
     if (inp.toMarker) {
-      if (this.skater.isRagdoll) this.skater.endRagdoll();
+      if (this.skater?.isRagdoll) this.skater.endRagdoll();
       if (c.gotoMarker()) this.rig.snap(c.pos, this.rig.heading);
       else ui.toast?.('No marker set — press T (D-pad up) to set one');
     }
@@ -449,10 +467,10 @@ export class Game {
     }
 
     // ---- camera ----
-    const ragdoll = this.skater.isRagdoll;
-    const target = ragdoll ? this.skater.getRagdollCenter(_v2) : c.pos;
+    const bailing = c.mode === 'bail';
+    const target = this._focus(_v2);
     const facing = Math.atan2(c.fwd(_v).x, c.fwd(_v).z);
-    this.rig.update(dt, target, ragdoll ? c.board.vel.clone().multiplyScalar(0) : c.vel, { airborne: c.mode === 'air' || ragdoll, facing });
+    this.rig.update(dt, target, bailing ? _v.set(0, 0, 0) : c.vel, { airborne: c.mode === 'air' || bailing, facing });
 
     // ---- audio ----
     this.audio.update(dt, {
@@ -491,7 +509,8 @@ export class Game {
           a.play('flip');
           break;
         case 'catch':
-          a.play('catch');
+          a.play('catch', e.quality === 'clean' ? 1 : 0.6);
+          this.input.rumble(e.quality === 'clean' ? 0.25 : 0.5, 50);
           break;
         case 'land':
           a.play('land', e.intensity);
@@ -528,11 +547,11 @@ export class Game {
           if (this.settings.showTrickNames) ui.trick?.('Bail', { quality: 'bail', sub: e.reason });
           ui.lineEnd?.();
           const spin = new THREE.Vector3((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 6);
-          this.skater.bail(e.velocity || this.controller.vel.clone(), spin, (center, radius) => this.collision.sphere(center, radius));
+          this.skater?.bail(e.velocity || this.controller.vel.clone(), spin, (center, radius) => this.collision.sphere(center, radius));
           break;
         }
         case 'respawn':
-          if (this.skater.isRagdoll) this.skater.endRagdoll();
+          if (this.skater?.isRagdoll) this.skater.endRagdoll();
           this.rig.snap(this.controller.pos, Math.atan2(this.controller.fwd(_v).x, this.controller.fwd(_v).z));
           break;
       }

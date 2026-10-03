@@ -35,6 +35,7 @@ export class SkaterController {
     this.flick = new FlickRecognizer();
     this.events = [];
     this.stance = 'regular';
+    this.autoCatch = false; // true = board is caught automatically after one rotation
     this.pos = new THREE.Vector3();
     this.vel = new THREE.Vector3();
     this.quat = new THREE.Quaternion();
@@ -158,8 +159,14 @@ export class SkaterController {
     const u = -input.flick.x * hs;
     const v = input.flick.y;
     const canLoad = this.mode === 'ground' || this.mode === 'grind';
-    const lateAllowed = !this.trick && this.airTime > 0.1 && this._heightAboveGround() > 0.5;
-    const ev = this.flick.update(dt, u, v, { canLoad, airborne: this.mode === 'air', lateAllowed });
+    const holdMode = !!(input.flickHold || input.flickRelease);
+    const lateAllowed = !holdMode && !this.trick && this.airTime > 0.1 && this._heightAboveGround() > 0.5;
+    if (input.flickPress && canLoad) this.flick.reset();
+    let ev = this.flick.update(dt, u, v, { canLoad, airborne: this.mode === 'air', lateAllowed, manual: holdMode });
+    if (input.flickRelease) {
+      const rel = this.flick.release();
+      if (rel) ev = rel;
+    }
     if (ev) {
       if (ev.type === 'load') {
         this.loading = true;
@@ -192,11 +199,15 @@ export class SkaterController {
 
     // ---- timers / smoothing ----
     if (this.trick) {
-      this.trick.t += dt;
-      if (this.trick.t >= this.trick.dur && !this.trick.caught) {
-        this.trick.caught = true;
-        this.emit('catch');
+      const tr = this.trick;
+      tr.t += dt;
+      if (!tr.caught) {
+        if (input.catch && this.mode === 'air' && tr.t > 0.03) this._catch();
+        else if (this.autoCatch && tr.t >= tr.T) this._catch();
       }
+      // visual time: frozen once caught (past catches ease back to upright)
+      if (tr.caught) tr.vt = damp(tr.vt, tr.catchT, 30, dt);
+      else tr.vt = tr.t;
     }
     this.popT += dt;
     this.flickT = Math.min(1, this.flickT + dt / 0.28);
@@ -446,26 +457,32 @@ export class SkaterController {
     this.grab = null;
     this.landingNormal.copy(this.normal);
     this.predictT = 0;
-    this.airTrickName = trickName(ev.flips, ev.shove, ev.nose, fakie && !ev.nose);
+    this.airFakie = fakie && !ev.nose;
+    this.airTrickName = trickName(0, 0, ev.nose, this.airFakie);
     this.trick = null;
     if (ev.flips || ev.shove) this._startTrick(ev.flips, ev.shove, ev.nose, false);
     this.emit('pop', { power: ev.power });
   }
 
+  // Tricks rotate continuously until the rider catches them. One period T brings the board
+  // back upright once (a kickflip); catching after 2T makes it a double, etc.
   _startTrick(flips, shove, nollie, late) {
     const hs = this.heelSign;
-    const dur = 0.25 + 0.115 * Math.abs(flips) + 0.075 * Math.abs(shove);
+    const T = 0.26 + 0.08 * Math.abs(flips) + 0.06 * Math.abs(shove);
     this.trick = {
       flips,
       shove,
+      nollie,
       t: 0,
-      dur,
+      vt: 0,
+      T,
       caught: false,
-      flipTotal: -hs * flips * Math.PI * 2 * (nollie ? -1 : 1),
-      shoveTotal: -hs * shove * Math.PI * (nollie ? -1 : 1),
+      catchT: 0,
+      quality: null,
+      flipPer: -hs * flips * Math.PI * 2 * (nollie ? -1 : 1),
+      shovePer: -hs * shove * Math.PI * (nollie ? -1 : 1),
       late,
     };
-    if (late) this.airTrickName = (this.airTrickName ? this.airTrickName + ' ' : '') + 'Late ' + trickName(flips, shove, false, false);
     if (flips) {
       this.flickAnim = flips > 0 ? hs : -hs; // kickflips kick toward the heel side
       this.flickT = 0;
@@ -474,6 +491,44 @@ export class SkaterController {
       this.flickT = 0;
     }
     this.emit('flip', { flips, shove });
+  }
+
+  // Catch timing: the board is upright at t = kT. Clicking a little before (feet meet the board
+  // as it comes around) or just after is clean; wider misses are sketchy; anything else is crooked.
+  _catchQuality(t, T) {
+    const k = Math.round(t / T);
+    const d = t - k * T; // <0: early (board still coming around), >0: late
+    if (k === 0) return t < 0.09 ? { k: 0, q: 'clean' } : { k: 0, q: 'bad' };
+    if (d >= -0.12 && d <= 0.1) return { k, q: 'clean' };
+    if (d >= -0.19 && d <= 0.17) return { k, q: 'sketchy' };
+    return { k, q: 'bad' };
+  }
+
+  _catch() {
+    const tr = this.trick;
+    if (!tr || tr.caught) return;
+    const { k, q } = this._catchQuality(tr.t, tr.T);
+    tr.caught = true;
+    tr.k = k;
+    tr.quality = q;
+    tr.catchT = q === 'bad' ? tr.t : k * tr.T;
+    // early catches keep rotating into place; the visual time eases to catchT
+    if (q !== 'bad') {
+      const base = trickName(tr.flips * k, tr.shove * k, tr.nollie, false);
+      const late = tr.late ? 'Late ' : '';
+      if (k === 0) {
+        if (!tr.late) this.airTrickName = trickName(0, 0, tr.nollie, this.airFakie);
+      } else if (tr.late) this.airTrickName = (this.airTrickName && this.airTrickName !== 'Ollie' ? this.airTrickName + ' ' : '') + late + base;
+      else this.airTrickName = (this.airFakie ? 'Fakie ' : '') + base;
+    }
+    this.emit('catch', { quality: q });
+  }
+
+  // Landing a trick that was never caught is always a bail (the feet never found the board).
+  _uncaughtLanding() {
+    const tr = this.trick;
+    if (!tr || tr.caught) return null;
+    return 'bail';
   }
 
   // ---------------------------------------------------------------------------------------
@@ -497,7 +552,7 @@ export class SkaterController {
     }
 
     // grabs
-    if (this.airTime > 0.1 && (!this.trick || this.trick.caught)) {
+    if (this.airTime > 0.1 && (!this.trick || this.trick.caught) && !input.flickHold) {
       let g = null;
       if (input.grabToe && input.grabHeel) g = 'stalefish';
       else if (input.grabToe || input.grabHeel) {
@@ -589,10 +644,16 @@ export class SkaterController {
     const vtLen = vt.length();
     // ---- judge the landing ----
     if (up.dot(m) < 0.55) return this._bail('Over-rotated', m);
-    if (this.trick && !this.trick.caught && this.trick.t / this.trick.dur < 0.8) return this._bail("Didn't catch it", m);
-    if (vn > 11.5) return this._bail('Too big', m);
     let sketchy = false;
-    if (this.trick && !this.trick.caught) sketchy = true;
+    if (this.trick) {
+      if (!this.trick.caught) {
+        if (this._uncaughtLanding() === 'bail') return this._bail("Didn't catch it", m);
+        sketchy = true;
+      }
+      if (this.trick.quality === 'bad') return this._bail('Caught it crooked', m);
+      if (this.trick.quality === 'sketchy') sketchy = true;
+    }
+    if (vn > 11.5) return this._bail('Too big', m);
     if (this.grab) {
       if (vn > 5) return this._bail('Held the grab', m);
       sketchy = true;
@@ -748,8 +809,11 @@ export class SkaterController {
     this.vel.copy(gdir).multiplyScalar(speed);
     this.mode = 'grind';
     this.landCompress = 0.5;
-    if (this.trick && !this.trick.caught && this.trick.t / this.trick.dur < 0.8) return this._bail("Didn't catch it");
-    if (this.trick) this.trick = null;
+    if (this.trick) {
+      if (!this.trick.caught && this._uncaughtLanding() === 'bail') return this._bail("Didn't catch it");
+      if (this.trick.quality === 'bad') return this._bail('Caught it crooked');
+      this.trick = null;
+    }
     const pre = this._composeAirName();
     if (pre && pre !== 'Ollie' && pre !== 'Air') this._trickCallout(pre, 'clean');
     this.airTrickName = null;
@@ -951,11 +1015,11 @@ export class SkaterController {
       pitch = -0.42 * easeInOut(p) * (this.popNose ? -1 : 1);
     }
     if (this.trick) {
-      const k = clamp(this.trick.t / this.trick.dur, 0, 1);
-      const e = this.trick.flips ? k : easeInOut(k);
-      flip = this.trick.flipTotal * e;
-      shove = this.trick.shoveTotal * e;
-      lift = Math.sin(k * Math.PI) * 0.1;
+      const tr = this.trick;
+      const ph = tr.vt / tr.T;
+      flip = tr.flipPer * ph;
+      shove = tr.shovePer * ph;
+      lift = Math.min(1, tr.vt / 0.12) * 0.1 * (tr.caught ? Math.max(0, 1 - (tr.t - tr.catchT) / 0.15) : 1);
     }
     if (this.mode === 'ground' && this.manual) {
       const pz = this.manual > 0 ? -BOARD.truckAxleZ : BOARD.truckAxleZ;
@@ -1005,7 +1069,7 @@ export class SkaterController {
     pose.crouch = this.crouch;
     pose.lean = this.lean;
     pose.pushPhase = Math.max(0, this.pushT);
-    pose.feetOnBoard = !(this.trick && this.trick.t < this.trick.dur * 0.92);
+    pose.feetOnBoard = !(this.trick && !this.trick.caught);
     pose.flick = this.flickT < 1 ? this.flickAnim : 0;
     pose.flickT = this.flickT;
     pose.tuck = this.mode === 'air' ? clamp(0.25 + (this.trick ? 0.55 : 0) + (this.grab ? 0.5 : 0), 0, 1) : 0;

@@ -39,18 +39,31 @@ await page.keyboard.up('KeyW');
 console.log('after push', await state());
 await page.screenshot({ path: `${out}/02-rolling.png` });
 
-// ollie with the mouse flick: pull back then flick forward
+// kickflip with the mouse: hold left button, pull back, flick up-left, release, click to catch
 await page.mouse.move(640, 360);
+await page.mouse.down();
 for (let i = 0; i < 6; i++) {
   await page.mouse.move(640, 360 + (i + 1) * 50);
   await page.waitForTimeout(16);
 }
-await page.waitForTimeout(80);
-for (let i = 0; i < 6; i++) await page.mouse.move(640, 660 - (i + 1) * 100);
-await page.waitForTimeout(180);
-await page.screenshot({ path: `${out}/03-ollie.png` });
-console.log('ollie', await state());
+await page.waitForTimeout(60);
+for (let i = 0; i < 6; i++) await page.mouse.move(640 - (i + 1) * 30, 660 - (i + 1) * 90);
+await page.mouse.up();
+const popState = await state();
+console.log('popped', popState);
+await page.waitForTimeout(150);
+await page.screenshot({ path: `${out}/03-flip.png` });
+const trick = await page.evaluate(() => {
+  const t = window.__sk8.controller.trick;
+  return t ? { T: t.T, t: t.t, flips: t.flips, shove: t.shove } : null;
+});
+console.log('trick in air', trick);
+// click when the board comes back around
+if (trick) await page.waitForTimeout(Math.max(0, (trick.T - trick.t) * 1000 - 60));
+await page.mouse.down();
+await page.mouse.up();
 await page.waitForTimeout(900);
+console.log('after catch', await state(), await page.evaluate(() => window.__sk8.ui && document.querySelector('#ui')?.innerText.slice(0, 200)));
 
 // carve
 await page.keyboard.down('KeyA');

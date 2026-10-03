@@ -80,7 +80,9 @@ export class FlickRecognizer {
 
   // u: heel-side +, v: up +. canLoad: on the ground / grinding / manual. airborne: allow late flicks.
   // Returns null or an event object.
-  update(dt, u, v, { canLoad, airborne, lateAllowed }) {
+  // manual: mouse hold mode. Pops never fire on their own; release() fires them.
+  update(dt, u, v, { canLoad, airborne, lateAllowed, manual = false }) {
+    this.manual = manual;
     this.t += dt;
     const mag = Math.hypot(u, v);
     this.trail.push({ x: u, y: v, t: this.t });
@@ -105,12 +107,7 @@ export class FlickRecognizer {
       case 'loaded': {
         const [lu, lv] = this._local(u, v);
         const th = Math.atan2(lu, -lv);
-        if (mag > RIM_MAG) {
-          this.sweep += wrap(th - this.prevTheta);
-          this.prevTheta = th;
-        } else {
-          this.prevTheta = th;
-        }
+        this._sweepStep(th, mag);
         if (mag < 0.25) {
           this.lowT += dt;
           if (this.lowT > 0.5) {
@@ -123,6 +120,15 @@ export class FlickRecognizer {
         if (inLoad) {
           this.leaveT = -1;
           this.loadedAmount = Math.min(1, this.loadedAmount + dt / 0.18);
+        }
+        if (lv > 0.5 && mag > 0.5 && this.topT < 0) this.topT = this.t;
+        if (this.manual) {
+          if (mag >= 0.55 && this.leaveT > 0) {
+            this.lastLU = lu;
+            this.lastLV = lv;
+            this.hasStrong = true;
+          }
+          return null;
         }
         // reached the far side -> brief pending window to read the final direction
         if (lv > 0.5 && mag > 0.5) {
@@ -153,10 +159,7 @@ export class FlickRecognizer {
       case 'pending': {
         const [lu, lv] = this._local(u, v);
         const th = Math.atan2(lu, -lv);
-        if (mag > RIM_MAG) {
-          this.sweep += wrap(th - this.prevTheta);
-          this.prevTheta = th;
-        }
+        this._sweepStep(th, mag);
         this.pendingT += dt;
         if (mag >= 0.5) {
           this.lastLU = lu;
@@ -178,6 +181,33 @@ export class FlickRecognizer {
     return null;
   }
 
+  // Mouse button released: pop with the gesture drawn while it was held (or cancel).
+  release() {
+    if (!this.loaded) {
+      this.state = 'idle';
+      return null;
+    }
+    const committed = this.hasStrong && (this.lastLV > 0.25 || Math.abs(this.sweep) > 1.05 || Math.abs(this.lastLU) > 0.8);
+    if (!committed) {
+      this.state = 'idle';
+      return { type: 'unload' };
+    }
+    const ev = this._pop(this.lastLU, this.lastLV);
+    this.state = 'idle';
+    return ev;
+  }
+
+  // Accumulate travel around the rim. A jump between samples whose chord cuts near the center
+  // (a fast flick straight across, common with mice at low frame rates) is not rim travel.
+  _sweepStep(th, mag) {
+    if (mag > RIM_MAG && this.prevMag > RIM_MAG) {
+      const d = wrap(th - this.prevTheta);
+      if (Math.cos(Math.abs(d) / 2) * Math.min(mag, this.prevMag) > 0.5) this.sweep += d;
+    }
+    this.prevTheta = th;
+    this.prevMag = mag;
+  }
+
   _local(u, v) {
     // nose loads are mirrored vertically so the same classification applies
     return this.nose ? [u, -v] : [u, v];
@@ -189,12 +219,14 @@ export class FlickRecognizer {
     this.sweep = 0;
     const [lu, lv] = this._local(u, v);
     this.prevTheta = Math.atan2(lu, -lv);
+    this.prevMag = Math.hypot(u, v);
     this.loadT = this.t;
     this.leaveT = -1;
     this.sideT = 0;
     this.lowT = 0;
     this.loadedAmount = 0.3;
     this.hasStrong = false;
+    this.topT = -1;
     return { type: 'load', nose };
   }
 
@@ -202,13 +234,13 @@ export class FlickRecognizer {
     const S = (this.sweep * 180) / Math.PI;
     const aS = Math.abs(S);
     const endU = lu;
-    const flickTime = this.leaveT > 0 ? this.t - this.leaveT : 0.12;
+    const endT = this.topT > 0 ? this.topT : this.t;
+    const flickTime = this.leaveT > 0 ? Math.max(0, endT - this.leaveT) : 0.12;
     let flips = 0;
     let shove = 0;
     if (aS < 60) {
       if (endU > 0.32) flips = 1;
       else if (endU < -0.32) flips = -1;
-      if (flips && flickTime < 0.04) flips *= 2;
       if (lv < 0.45 && Math.abs(endU) > 0.8) {
         // went straight across to the side through the middle: treat as a pop shove-it
         flips = 0;

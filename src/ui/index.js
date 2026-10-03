@@ -51,7 +51,7 @@ function wordmark(size = '') {
     h('span', { class: 'wm-io', text: 'io' }));
 }
 
-export function createUI({ root, appearance, board, settings, previewHooks, audio, keyboard = true } = {}) {
+export function createUI({ root, appearance, board, settings, previewHooks, audio, keyboard = true, boardOnly = false } = {}) {
   injectFonts();
   if (!root) {
     root = document.getElementById('ui');
@@ -427,7 +427,7 @@ export function createUI({ root, appearance, board, settings, previewHooks, audi
   }
   function randomize() {
     sound('uiClick');
-    if (czTab === 'skater') { app = { ...app, ...randomAppearance() }; emit('appearance', { ...app }); }
+    if (czTab === 'skater' && !boardOnly) { app = { ...app, ...randomAppearance() }; emit('appearance', { ...app }); }
     else { brd = { ...brd, ...randomBoard() }; emit('board', { ...brd }); }
     for (const r of [...czRows[czTab][0], ...czRows[czTab][1]]) r._nav?.refresh?.();
     randomBtn.classList.remove('spin'); void randomBtn.offsetWidth; randomBtn.classList.add('spin');
@@ -461,9 +461,15 @@ export function createUI({ root, appearance, board, settings, previewHooks, audi
     },
     exit() { try { previewHooks?.exit?.(); } catch (e) { console.error(e); } },
     back() { sound('uiBack'); goBack(); },
-    tab(d) { setTab(czTab === 'skater' ? (d > 0 ? 'board' : 'skater') : (d < 0 ? 'skater' : 'board'), true); },
+    tab(d) { if (boardOnly) return; setTab(czTab === 'skater' ? (d > 0 ? 'board' : 'skater') : (d < 0 ? 'skater' : 'board'), true); },
   };
-  setTab('skater');
+  if (boardOnly) {
+    // no rider model yet: only the board can be customized
+    tabBtns[0].hidden = true;
+    tabBtns[0].removeAttribute('data-nav');
+    tabInk.hidden = true;
+    setTab('board');
+  } else setTab('skater');
 
   // ================================================================= CONTROLS
   const ctlBody = h('div', { class: 'ctl-body' }, buildControlsContent());

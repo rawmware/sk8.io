@@ -54,7 +54,7 @@ export function createMaterials(tex) {
   M.castConcrete = addMacro(
     std({
       name: 'castConcrete',
-      color: 0xe2ddd2,
+      color: 0xc4bfb4,
       map: tex.smooth.map,
       normalMap: tex.smooth.normalMap,
       roughnessMap: tex.smooth.roughnessMap,
@@ -68,7 +68,7 @@ export function createMaterials(tex) {
   M.smoothConcrete = addMacro(
     std({
       name: 'smoothConcrete',
-      color: 0xf2efe8,
+      color: 0xd6d2ca,
       map: tex.smooth.map,
       normalMap: tex.smooth.normalMap,
       normalScale: new THREE.Vector2(0.6, 0.6),
@@ -109,12 +109,12 @@ export function createMaterials(tex) {
   );
   M.skatelite = std({
     name: 'skatelite',
-    color: 0xffffff,
+    color: 0xd8d0c8,
     map: tex.skatelite.map,
     normalMap: tex.skatelite.normalMap,
     normalScale: new THREE.Vector2(0.6, 0.6),
     roughnessMap: tex.skatelite.roughnessMap,
-    roughness: 1,
+    roughness: 1.45,
     metalnessMap: tex.skatelite.roughnessMap,
     metalness: 0.6,
   });
@@ -123,7 +123,7 @@ export function createMaterials(tex) {
   M.skateliteFlat.polygonOffsetFactor = -2;
   M.skateliteFlat.polygonOffsetUnits = -2;
   M.plywood = std({ name: 'plywood', color: 0xffffff, map: tex.plywood.map, roughness: 0.75 });
-  M.paintedWood = std({ name: 'paintedWood', color: 0x2f4f66, map: tex.plywood.map, roughness: 0.6 });
+  M.paintedWood = std({ name: 'paintedWood', color: 0x7b8e9c, map: tex.plywood.map, roughness: 0.6 });
   M.benchWood = std({ name: 'benchWood', color: 0xb08c66, map: tex.plywood.map, roughness: 0.6 });
 
   const metalDetail = (o) =>
@@ -204,7 +204,9 @@ export function createMaterials(tex) {
     name: 'chainLink',
     color: 0xd0d4d8,
     map: tex.chain.map,
-    alphaTest: 0.4,
+    transparent: true,
+    depthWrite: false,
+    alphaTest: 0.01,
     side: THREE.DoubleSide,
     metalness: 0.7,
     roughness: 0.5,

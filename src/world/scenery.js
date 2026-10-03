@@ -154,7 +154,10 @@ function building(b, { x0, z0, x1, z1, h, wall = 'brick', windows = false, mural
     const c = A.clone().addScaledVector(dir, m.at ?? len / 2).addScaledVector(n, 0.02);
     const y0 = m.y0 ?? 0.6;
     const G = new Geo();
-    const r = dir.clone().multiplyScalar(w / 2);
+    // u must increase toward the viewer's right (viewer looks along -n)
+    const right = n.clone().negate().cross(V(0, 1, 0));
+    const rdir = dir.dot(right) >= 0 ? dir : dir.clone().negate();
+    const r = rdir.clone().multiplyScalar(w / 2);
     const p0 = c.clone().sub(r);
     const p1 = c.clone().add(r);
     const a = G.vert(p0.x, y0, p0.z, n.x, 0, n.z, 0, 0);
@@ -178,30 +181,30 @@ function building(b, { x0, z0, x1, z1, h, wall = 'brick', windows = false, mural
 function buildBuildings(b) {
   // west warehouse with mural facing the park
   building(b, {
-    x0: -132, z0: -34, x1: -101, z1: 20, h: 10, wall: 'corrugatedCream', rooftop: true, seed: 3,
+    x0: -136, z0: -34, x1: -106, z1: 20, h: 10, wall: 'corrugatedCream', rooftop: true, seed: 3,
     murals: [{ side: 'e', idx: 0, width: 26, y0: 0.9 }],
     doors: [{ side: 'n', at: 12, w: 5, h: 5.2, mat: 'corrugated' }],
   });
   // south brick block with mural
   building(b, {
-    x0: -44, z0: -134, x1: 2, z1: -102, h: 15, wall: 'brick', windows: true, seed: 5,
+    x0: -44, z0: -138, x1: 2, z1: -106, h: 15, wall: 'brick', windows: true, seed: 5,
     murals: [{ side: 'n', idx: 1, width: 26, y0: 1.0 }],
   });
-  building(b, { x0: 12, z0: -128, x1: 46, z1: -104, h: 22, wall: 'brick', windows: true, seed: 6 });
+  building(b, { x0: 12, z0: -132, x1: 46, z1: -108, h: 22, wall: 'brick', windows: true, seed: 6 });
   // east warehouse (blue) with mural
   building(b, {
-    x0: 101, z0: -52, x1: 136, z1: -8, h: 9, wall: 'corrugated', rooftop: true, seed: 7,
+    x0: 106, z0: -52, x1: 140, z1: -8, h: 9, wall: 'corrugated', rooftop: true, seed: 7,
     murals: [{ side: 'w', idx: 2, width: 22, y0: 0.8 }],
     doors: [{ side: 'w', at: 37, w: 4.5, h: 4.6, mat: 'darkSteel' }],
   });
-  building(b, { x0: 103, z0: 6, x1: 128, z1: 52, h: 18, wall: 'brick', windows: true, seed: 8 });
+  building(b, { x0: 107, z0: 6, x1: 132, z1: 52, h: 18, wall: 'brick', windows: true, seed: 8 });
   // north side (behind the hill)
   building(b, { x0: -70, z0: 104, x1: -30, z1: 128, h: 13, wall: 'brick', windows: true, seed: 9 });
   building(b, { x0: 16, z0: 102, x1: 58, z1: 132, h: 9, wall: 'corrugatedRust', rooftop: true, seed: 10, doors: [{ side: 's', at: 20, w: 6, h: 5.5, mat: 'darkSteel' }] });
-  building(b, { x0: -132, z0: 40, x1: -104, z1: 80, h: 11, wall: 'corrugatedRust', seed: 11 });
-  building(b, { x0: 104, z0: 66, x1: 140, z1: 100, h: 26, wall: 'brick', windows: true, seed: 12 });
-  building(b, { x0: -140, z0: -104, x1: -104, z1: -70, h: 16, wall: 'brick', windows: true, seed: 13 });
-  building(b, { x0: 66, z0: -136, x1: 108, z1: -104, h: 12, wall: 'corrugatedCream', seed: 14 });
+  building(b, { x0: -136, z0: 40, x1: -108, z1: 80, h: 11, wall: 'corrugatedRust', seed: 11 });
+  building(b, { x0: 108, z0: 66, x1: 144, z1: 100, h: 26, wall: 'brick', windows: true, seed: 12 });
+  building(b, { x0: -144, z0: -110, x1: -108, z1: -72, h: 16, wall: 'brick', windows: true, seed: 13 });
+  building(b, { x0: 66, z0: -140, x1: 108, z1: -108, h: 12, wall: 'corrugatedCream', seed: 14 });
 }
 
 // ---------------- signage ----------------
@@ -361,10 +364,10 @@ function treeSpots(parkTrees) {
       spots.push({ pos: axis === 'x' ? V(t, 0, off) : V(off, 0, t), scale: 0.9 + rand() * 0.5 });
     }
   };
-  ring(-99.5, 'x', -95, 95, 11);
-  ring(99.5, 'z', -95, 60, 12);
-  ring(-99.5, 'z', -60, 95, 12);
-  ring(99.5, 'x', -95, 95, 13);
+  ring(-100.5, 'x', -95, 95, 11);
+  ring(100.5, 'z', -95, 60, 12);
+  ring(-100.5, 'z', -60, 95, 12);
+  ring(100.5, 'x', -95, 95, 13);
   // scattered further out
   for (let i = 0; i < 40; i++) {
     const a = rand() * Math.PI * 2;
@@ -403,7 +406,7 @@ function buildDistant(group, M) {
       const ridge = noise.fbm(Math.cos(a) * 3 + 10, Math.sin(a) * 3 + t * 2, 5);
       const env = Math.sin(Math.min(1, t * 1.6) * Math.PI * 0.5);
       const y = Math.max(0, (ridge - 0.32) * 260) * env * (0.5 + 0.5 * t) - 2;
-      col.setRGB(0.22 + ridge * 0.1, 0.27 + ridge * 0.08, 0.2 + ridge * 0.05);
+      col.setRGB(0.1 + ridge * 0.06, 0.14 + ridge * 0.06, 0.1 + ridge * 0.04);
       G.vert(x, y, z, 0, 1, 0, x * 0.01, z * 0.01, [col.r, col.g, col.b]);
     }
   }
@@ -430,7 +433,7 @@ function buildDistant(group, M) {
     const g = new THREE.BoxGeometry(w, h, d);
     g.translate(Math.sin(a) * r, h / 2, Math.cos(a) * r);
     const c = new Float32Array(g.attributes.position.count * 3);
-    const shade = 0.42 + rand() * 0.2;
+    const shade = 0.16 + rand() * 0.1;
     for (let k = 0; k < c.length; k += 3) {
       c[k] = shade * 0.92;
       c[k + 1] = shade * 0.96;

@@ -1,10 +1,11 @@
 # SK8.IO
 
-A skateboarding simulator that runs in the browser. It has real physics, analog **flick-it** trick controls
-(mouse or right stick), grinds and slides, manuals, a ragdoll for bails, a full skatepark, an object dropper,
-and a customizable skater and board.
+A skateboarding simulator that runs in the browser. Right now it's **board-only** (no rider model) while the
+gameplay feel is tuned. It has real physics, analog **flick-it** trick controls
+(mouse or right stick) with click-to-catch flips, grinds and slides, manuals, a skatepark, an object dropper,
+and a customizable board.
 
-Everything is generated in code with three.js: the park, the skater, the board, the textures and the audio.
+Everything is generated in code with three.js: the park, the board, the textures and the audio.
 There are no downloaded assets. All the art and branding is original.
 
 ## Play
@@ -24,13 +25,15 @@ other standard-mapping pad) and press a button.
 ### Keyboard + mouse
 | Input | Action |
 | --- | --- |
-| **Mouse** | Flick stick. Pull the mouse back (toward you) to crouch and load the tail, then flick it forward to pop |
+| **Hold left click** | Set up the trick: while holding, pull the mouse back (toward you) to load the tail, then flick it forward or sideways |
+| **Release left click** | Pop the trick you drew. A faster flick pops higher |
+| **Left click in the air** | Catch. Flips and shove-its keep spinning until you catch them: click as the board comes back around. Catch after two rotations for a double |
 | **W** | Push (hold to keep pushing) |
 | **S** | Foot brake, or powerslide at speed |
 | **A / D** | Carve; on the ground, wind up for a spin; in the air, spin |
-| **Space** | Simple ollie (hold, then release) |
+| **Space** | Simple ollie (hold, then release); tap in the air to catch |
 | **Q / E** | Manual / nose manual (hold) |
-| **Left / right click** in the air | Grab toe side / heel side (hold **W**/**S** for nose/tail grab) |
+| **Right click** in the air | Grab (add **D** for heel side, **W**/**S** for nose/tail). Let go before landing |
 | **W / S** while locking onto a rail | Nose grinds and slides / 5-0s and tailslides (add **A/D** for crooked/smith/feeble) |
 | **R** | Respawn |
 | **T / Y** | Set spot marker / return to marker |
@@ -40,7 +43,7 @@ other standard-mapping pad) and press a button.
 | **Esc** | Pause menu |
 
 ### Controller
-Left stick: steer and spin · Right stick: flick-it tricks · A: push · B: brake/powerslide · X: simple ollie ·
+Left stick: steer and spin · Right stick: flick-it tricks (pops when you reach the end of the flick) · A: push, or catch in the air · B: brake/powerslide · X: simple ollie ·
 LT/RT: grabs · LB/RB: manual/nose manual · D-pad up/down: set/return to marker · View: object dropper ·
 Menu: pause · Y: respawn · R3: camera
 
@@ -50,7 +53,7 @@ Menu: pause · Y: respawn · R3: camera
 | Ollie | ↓ then ↑ |
 | Nollie (and nollie variations) | ↑ then ↓ |
 | Kickflip / Heelflip | ↓ then ↖ / ↗ |
-| Double flips | the same, flicked very fast |
+| Double flips | any flip, caught after the second rotation |
 | Pop shove-it (BS / FS) | ↓ then ← / → |
 | 360 shove-it | ↓ ← ↑ (half circle) |
 | Varial kickflip / Varial heelflip | ↓ ← ↖ / ↓ → ↗ |
@@ -58,8 +61,8 @@ Menu: pause · Y: respawn · R3: camera
 | 360 flip / Laser flip | ↓ ← ↑ ↗ / ↓ → ↑ ↖ (go past the top) |
 | Late flips | flick in the air |
 
-How high you pop depends on how hard and fast you flick. A weak pop doesn't give the board enough air time
-to finish the trick, and you'll bail. Landing sideways, over-rotating, or still holding a grab when you land
+How high you pop depends on how hard and fast you flick. The board keeps rotating until you catch it, so a
+weak pop leaves no time to catch, and a late or early click catches it crooked. Landing sideways, over-rotating, or still holding a grab when you land
 will also make you bail.
 
 ## Project layout
@@ -68,10 +71,10 @@ src/
   core/        shared constants (board dimensions, gravity, surfaces) + customization catalog
   game/        game loop, physics controller, flick-it recognizer, input, camera, collision (BVH), object dropper
   board/       procedural skateboard model
-  character/   procedural skater, IK animation, verlet ragdoll
+  demo/        lightweight park used by the demo build (demo.html)
   world/       skatepark, environment, lighting, droppable objects
   ui/          menus, HUD, customization, controls screen
   audio/       procedural WebAudio sound design
-tools/         headless physics checks (node tools/physics-sim.mjs)
+tools/         headless physics checks (node tools/physics-sim.mjs, node tools/catch-sim.mjs)
 ```
 See [`CONTRACTS.md`](CONTRACTS.md) for the module interfaces.

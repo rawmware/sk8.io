@@ -134,9 +134,9 @@ function makeConcrete(size = 1024) {
   const skid = new Float32Array(size * size);
   const crack = new Float32Array(size * size);
   const joint = new Float32Array(size * size);
-  const npits = (size * size) / 160;
-  for (let i = 0; i < npits; i++) stamp(pits, size, rand() * size, rand() * size, 0.6 + rand() * 1.6, 1, 'max');
-  for (let i = 0; i < npits * 1.4; i++) {
+  const npits = (size * size) / 700;
+  for (let i = 0; i < npits; i++) stamp(pits, size, rand() * size, rand() * size, 0.5 + rand() * rand() * 1.4, 0.4 + rand() * 0.6, 'max');
+  for (let i = 0; i < npits * 6; i++) {
     const k = ((rand() * size) | 0) + ((rand() * size) | 0) * size;
     speck[k] = rand() * 2 - 0.7;
   }
@@ -173,7 +173,7 @@ function makeConcrete(size = 1024) {
     strokePath(crack, size, pts, 0.7, 1, 'max');
   }
   // saw-cut joints at 0 and size/2 (=3m spacing)
-  const jw = 1.6;
+  const jw = 1.1;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const dx = Math.min(x % (size / 2), size / 2 - (x % (size / 2)));
@@ -192,20 +192,20 @@ function makeConcrete(size = 1024) {
     const f = fine[i];
     const m = mid[i];
     const s = stain[i];
-    let v = 0.6 + (m - 0.5) * 0.12 + (f - 0.5) * 0.16 + speck[i] * 0.05;
+    let v = 0.5 + (m - 0.5) * 0.1 + (f - 0.5) * 0.12 + speck[i] * 0.04;
     v *= 1 - clamp01((0.58 - s) * 1.6) * 0.22; // dark blotches
     v *= 1 + clamp01((s - 0.62) * 2.5) * 0.08; // pale worn patches
-    v *= 1 - pits[i] * 0.3;
+    v *= 1 - pits[i] * 0.18;
     v *= 1 - skid[i] * 0.55;
     v *= 1 - crack[i] * 0.45;
     const j = joint[i];
-    v *= 1 - (j >= 1 ? 0.55 : j * 0.35);
+    v *= 1 - (j >= 1 ? 0.42 : j * 0.25);
     const warm = (s - 0.5) * 0.05;
-    c[0] = v * (1.0 + warm);
-    c[1] = v * 0.985;
-    c[2] = v * (0.95 - warm);
+    c[0] = v * (1.02 + warm);
+    c[1] = v * 0.99;
+    c[2] = v * (0.93 - warm);
     c[3] = 1;
-    height[i] = f * 0.55 + m * 0.35 - pits[i] * 0.9 - crack[i] * 0.6 - (j >= 1 ? 1.4 : j * 0.3) + speck[i] * 0.08;
+    height[i] = f * 0.5 + m * 0.35 - pits[i] * 0.5 - crack[i] * 0.6 - (j >= 1 ? 1.4 : j * 0.3) + speck[i] * 0.08;
   });
   const rough = rgbaFrom(size, (x, y, i, c) => {
     const r = 0.86 + (fine[i] - 0.5) * 0.12 - clamp01((stain[i] - 0.55) * 2) * 0.12 - skid[i] * 0.2 + pits[i] * 0.06;

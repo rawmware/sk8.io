@@ -17,6 +17,7 @@ export class Input {
     this.pressedKeys = new Set(); // edge-triggered this frame
     this.mouseButtons = 0;
     this.mousePressed = new Set();
+    this.mouseReleased = new Set();
     this.wheel = 0;
     // virtual stick driven by the mouse (x right+, y up+)
     this.mouseStick = { x: 0, y: 0 };
@@ -48,6 +49,7 @@ export class Input {
     });
     window.addEventListener('mouseup', (e) => {
       this.mouseButtons &= ~(1 << e.button);
+      this.mouseReleased.add(e.button);
     });
     window.addEventListener('contextmenu', (e) => {
       if (this.mouseEnabled) e.preventDefault();
@@ -60,7 +62,8 @@ export class Input {
       { passive: true },
     );
     window.addEventListener('mousemove', (e) => {
-      if (!this.mouseEnabled) return;
+      // the flick stick only moves while the left button is held (hold = set up the trick)
+      if (!this.mouseEnabled || !(this.mouseButtons & 1)) return;
       // ~260px of travel = full stick deflection at sensitivity 1
       const k = (this.mouseSensitivity / 260);
       let dx = e.movementX * k;
@@ -156,8 +159,14 @@ export class Input {
     f.ollie = k.has('Space');
     f.manual = k.has('KeyQ') || k.has('ShiftLeft');
     f.noseManual = k.has('KeyE');
-    f.grabToe = !!(this.mouseButtons & 1);
-    f.grabHeel = !!(this.mouseButtons & 4);
+    // left button = trick button (hold to set up, release to pop, click in the air to catch)
+    f.flickHold = !!(this.mouseButtons & 1);
+    f.flickPress = this.mousePressed.has(0);
+    f.flickRelease = this.mouseReleased.has(0);
+    f.catch = f.flickPress || this.pressedKeys.has('Space');
+    // right button = grab (A/D picks the side: default toe-side indy, with D heel-side melon)
+    f.grabToe = !!(this.mouseButtons & 4) && !k.has('KeyD');
+    f.grabHeel = !!(this.mouseButtons & 4) && k.has('KeyD');
     f.move.x = (right ? 1 : 0) - (left ? 1 : 0);
     f.move.y = f.forward;
 
@@ -181,13 +190,11 @@ export class Input {
     else if (pk.has('Enter')) f.nav = 'confirm';
     else if (pk.has('Escape') || pk.has('Backspace')) f.nav = 'back';
 
-    // ---- mouse flick stick: springs back to center when the mouse rests ----
+    // ---- mouse flick stick: holds its position while the button is down, recenters on release ----
     const ms = this.mouseStick;
-    const idle = performance.now() - this.lastMouseMove;
-    if (idle > 45) {
-      const decay = Math.exp(-dt / 0.16);
-      ms.x *= decay;
-      ms.y *= decay;
+    if (!f.flickHold) {
+      ms.x = 0;
+      ms.y = 0;
     }
     f.flick.x = ms.x;
     f.flick.y = ms.y;
@@ -215,6 +222,7 @@ export class Input {
         f.flickSource = 'pad';
       }
       f.push = f.push || b[0];
+      f.catch = f.catch || edge(0) || edge(2);
       f.brake = f.brake || b[1];
       f.ollie = f.ollie || b[2];
       f.manual = f.manual || b[4];
@@ -263,6 +271,7 @@ export class Input {
 
     this.pressedKeys.clear();
     this.mousePressed.clear();
+    this.mouseReleased.clear();
     this.wheel = 0;
     return f;
   }

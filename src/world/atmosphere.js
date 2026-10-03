@@ -17,7 +17,7 @@ export function createAtmosphere(renderer, scene) {
   sky.scale.setScalar(4000);
   sky.frustumCulled = false;
   const U = sky.material.uniforms;
-  U.turbidity.value = 4.2;
+  U.turbidity.value = 3.2;
   U.rayleigh.value = 1.6;
   U.mieCoefficient.value = 0.0045;
   U.mieDirectionalG.value = 0.82;
@@ -62,17 +62,17 @@ export function createAtmosphere(renderer, scene) {
     U.cloudCoverage.value = prevCloud;
     U.skyGain.value = prevGain;
     scene.environment = envRT.texture;
-    scene.environmentIntensity = 0.55;
+    scene.environmentIntensity = 0.38;
     pmrem.dispose();
     envSky.geometry.dispose();
   }
 
   // --- lights ---
-  const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x6b5a45, 0.35);
+  const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x6b5a45, 0.22);
   hemi.name = 'hemi';
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(new THREE.Color().setHSL(0.09, 0.75, 0.82), 3.4);
+  const sun = new THREE.DirectionalLight(new THREE.Color().setHSL(0.085, 0.8, 0.8), 2.9);
   sun.name = 'sun';
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -93,7 +93,7 @@ export function createAtmosphere(renderer, scene) {
 
   // --- fog matched to the horizon ---
   const fogColor = new THREE.Color().setRGB(0.74, 0.76, 0.8, THREE.SRGBColorSpace);
-  scene.fog = new THREE.Fog(fogColor, 140, 1300);
+  scene.fog = new THREE.Fog(fogColor, 180, 1700);
   scene.background = null;
 
   // try to sample the real horizon color from the rendered sky (post tone-mapping)
