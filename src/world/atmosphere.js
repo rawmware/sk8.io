@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 
-export const SUN_ELEVATION = 24; // degrees above horizon (late afternoon)
+export const SUN_ELEVATION = 30; // degrees above horizon (late afternoon)
 export const SUN_AZIMUTH = 232; // degrees, measured from +Z toward +X (sun in the south-west-ish)
 
 export function createAtmosphere(renderer, scene) {
@@ -62,17 +62,17 @@ export function createAtmosphere(renderer, scene) {
     U.cloudCoverage.value = prevCloud;
     U.skyGain.value = prevGain;
     scene.environment = envRT.texture;
-    scene.environmentIntensity = 0.38;
+    scene.environmentIntensity = 0.24;
     pmrem.dispose();
     envSky.geometry.dispose();
   }
 
   // --- lights ---
-  const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x6b5a45, 0.22);
+  const hemi = new THREE.HemisphereLight(0xc4d6f5, 0x7a6248, 0.12);
   hemi.name = 'hemi';
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(new THREE.Color().setHSL(0.085, 0.8, 0.8), 2.9);
+  const sun = new THREE.DirectionalLight(new THREE.Color().setHSL(0.08, 0.85, 0.78), 3.7);
   sun.name = 'sun';
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);

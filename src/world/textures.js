@@ -168,9 +168,9 @@ function makeConcrete(size = 1024) {
     }
   }
   // hairline cracks
-  for (let i = 0; i < 5; i++) {
-    const pts = randomWalk(rand, rand() * size, rand() * size, 40 + rand() * 60, 3, 1.1);
-    strokePath(crack, size, pts, 0.7, 1, 'max');
+  for (let i = 0; i < 3; i++) {
+    const pts = randomWalk(rand, rand() * size, rand() * size, 20 + rand() * 40, 3, 0.7);
+    strokePath(crack, size, pts, 0.6, 0.6, 'max');
   }
   // saw-cut joints at 0 and size/2 (=3m spacing)
   const jw = 1.1;
@@ -197,13 +197,13 @@ function makeConcrete(size = 1024) {
     v *= 1 + clamp01((s - 0.62) * 2.5) * 0.08; // pale worn patches
     v *= 1 - pits[i] * 0.18;
     v *= 1 - skid[i] * 0.55;
-    v *= 1 - crack[i] * 0.45;
+    v *= 1 - crack[i] * 0.3;
     const j = joint[i];
     v *= 1 - (j >= 1 ? 0.42 : j * 0.25);
     const warm = (s - 0.5) * 0.05;
-    c[0] = v * (1.02 + warm);
-    c[1] = v * 0.99;
-    c[2] = v * (0.93 - warm);
+    c[0] = v * (1.05 + warm);
+    c[1] = v * 1.0;
+    c[2] = v * (0.9 - warm);
     c[3] = 1;
     height[i] = f * 0.5 + m * 0.35 - pits[i] * 0.5 - crack[i] * 0.6 - (j >= 1 ? 1.4 : j * 0.3) + speck[i] * 0.08;
   });
@@ -322,7 +322,7 @@ function makeSkatelite(size = 512) {
   }
   const height = new Float32Array(size * size);
   const map = rgbaFrom(size, (x, y, i, c) => {
-    let v = 0.2 + (mott[i] - 0.5) * 0.06 + (fine[i] - 0.5) * 0.02;
+    let v = 0.3 + (mott[i] - 0.5) * 0.07 + (fine[i] - 0.5) * 0.025;
     v += clamp01((wear[i] - 0.5) * 2.5) * 0.06;
     v *= 1 - seam[i] * 0.45;
     const sc = screws[i];
@@ -605,14 +605,14 @@ function makeLeaves(size = 512) {
   g.clearRect(0, 0, size, size);
   const cx = size / 2;
   const cy = size / 2;
-  for (let i = 0; i < 260; i++) {
+  for (let i = 0; i < 380; i++) {
     const a = rand() * Math.PI * 2;
     const rr = Math.sqrt(rand()) * size * 0.44;
     const x = cx + Math.cos(a) * rr;
     const y = cy + Math.sin(a) * rr;
     const l = size * (0.045 + rand() * 0.035);
     const w = l * (0.42 + rand() * 0.15);
-    const shade = 0.55 + rand() * 0.45 - (rr / size) * 0.3;
+    const shade = 0.45 + rand() * 0.35 - (rr / size) * 0.3;
     const hue = 70 + rand() * 40;
     g.save();
     g.translate(x, y);

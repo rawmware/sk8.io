@@ -34,7 +34,10 @@ other standard-mapping pad) and press a button.
 | **Space** | Simple ollie (hold, then release); tap in the air to catch |
 | **Q / E** | Manual / nose manual (hold) |
 | **Right click** in the air | Grab (add **D** for heel side, **W**/**S** for nose/tail). Let go before landing |
-| **W / S** while locking onto a rail | Nose grinds and slides / 5-0s and tailslides (add **A/D** for crooked/smith/feeble) |
+| **W / S** while locking onto a rail | Nose grinds and slides / 5-0s and tailslides. Press a new one mid-grind to switch |
+| **S + A/D** at a rail | Smith or feeble grind (sideways: bluntslide). While W or S is held in the air, A/D picks the variation instead of spinning |
+| **W + A/D** at a rail | Crooked grind or overcrook (sideways: noseblunt) |
+| **S + A/D** right after landing | Revert |
 | **R** | Respawn |
 | **T / Y** | Set spot marker / return to marker |
 | **F** | Object dropper |
@@ -59,7 +62,11 @@ Menu: pause · Y: respawn · R3: camera
 | Varial kickflip / Varial heelflip | ↓ ← ↖ / ↓ → ↗ |
 | Hardflip / Inward heelflip | ↓ → ↖ / ↓ ← ↗ |
 | 360 flip / Laser flip | ↓ ← ↑ ↗ / ↓ → ↑ ↖ (go past the top) |
-| Late flips | flick in the air |
+| Impossible | ↓ then all the way around the rim |
+| Late flips | in the air: hold, flick a direction, release (then catch) |
+
+FS/BS 180 + kickflip lands as an FS/BS Flip, a 180 with a 360 shove-it is a Bigspin, and flips caught before a
+rail turn into flip-in grinds ("360 Flip BS Smith Grind", "Kickflip FS Bluntslide", "Nollie Hardflip BS 5-0").
 
 How high you pop depends on how hard and fast you flick. The board keeps rotating until you catch it, so a
 weak pop leaves no time to catch, and a late or early click catches it crooked. Landing sideways, over-rotating, or still holding a grab when you land
@@ -75,6 +82,6 @@ src/
   world/       skatepark, environment, lighting, droppable objects
   ui/          menus, HUD, customization, controls screen
   audio/       procedural WebAudio sound design
-tools/         headless physics checks (node tools/physics-sim.mjs, node tools/catch-sim.mjs)
+tools/         headless physics checks (physics-sim.mjs, catch-sim.mjs, combo-sim.mjs — run with node)
 ```
 See [`CONTRACTS.md`](CONTRACTS.md) for the module interfaces.

@@ -6,6 +6,7 @@ import { SkaterController } from './controller.js';
 import { CameraRig } from './camera.js';
 import { Input } from './input.js';
 import { Dropper } from './dropper.js';
+import { Sparks } from './sparks.js';
 
 const MAX_STEP = 1 / 120;
 
@@ -131,6 +132,7 @@ export class Game {
     this.input.mouseSensitivity = this.settings.mouseSensitivity;
     this.input.invertFlickY = this.settings.invertFlickY;
     this.dropper = new Dropper(this.world, this.collision, this.scene);
+    this.sparks = new Sparks(this.scene);
 
     this.audio = createAudio();
     this.audio.setVolumes({ master: this.settings.masterVolume, sfx: this.settings.sfxVolume, music: this.settings.musicVolume });
@@ -280,7 +282,7 @@ export class Game {
     if (!this.introShown) {
       this.introShown = true;
       this.hintTimer = 9;
-      this.ui.setControlsHint?.('W push · A/D carve · hold left click, pull back & flick forward, release to pop · click again to catch flips · Esc menu');
+      this.ui.setControlsHint?.('W push · A/D carve · hold left click, pull back & flick, release to pop · click to catch · land on rails to grind (hold S/W ± A/D for variations) · Esc menu');
     }
   }
 
@@ -449,6 +451,11 @@ export class Game {
 
     // ---- visuals ----
     this._animateSkater(dt);
+    const g = c.grind;
+    if (c.mode === 'grind' && g && (g.kind === 'metal' || g.kind === 'coping') && g.speed > 0.8) {
+      this.sparks.emit(dt, g.c, g.dir, g.speed, (g.slide ? 35 : 80) * Math.min(2, g.speed / 3));
+    }
+    this.sparks.update(dt);
 
     // props: knock cones & trash cans around
     if (this.world.props && c.mode !== 'bail') {

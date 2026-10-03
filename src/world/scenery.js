@@ -149,7 +149,7 @@ function building(b, { x0, z0, x1, z1, h, wall = 'brick', windows = false, mural
     const dir = B.clone().sub(A);
     const len = dir.length();
     dir.normalize();
-    const w = m.width ?? Math.min(len - 2, (h - 1.2) * 2);
+    const w = Math.min(m.width ?? len - 2, len - 1, (h - (m.y0 ?? 0.6) - 0.35) * 2);
     const hh = w / 2;
     const c = A.clone().addScaledVector(dir, m.at ?? len / 2).addScaledVector(n, 0.02);
     const y0 = m.y0 ?? 0.6;
@@ -182,7 +182,7 @@ function buildBuildings(b) {
   // west warehouse with mural facing the park
   building(b, {
     x0: -136, z0: -34, x1: -106, z1: 20, h: 10, wall: 'corrugatedCream', rooftop: true, seed: 3,
-    murals: [{ side: 'e', idx: 0, width: 26, y0: 0.9 }],
+    murals: [{ side: 'e', idx: 0, width: 17, y0: 0.8 }],
     doors: [{ side: 'n', at: 12, w: 5, h: 5.2, mat: 'corrugated' }],
   });
   // south brick block with mural
@@ -194,7 +194,7 @@ function buildBuildings(b) {
   // east warehouse (blue) with mural
   building(b, {
     x0: 106, z0: -52, x1: 140, z1: -8, h: 9, wall: 'corrugated', rooftop: true, seed: 7,
-    murals: [{ side: 'w', idx: 2, width: 22, y0: 0.8 }],
+    murals: [{ side: 'w', idx: 2, width: 15.5, y0: 0.6 }],
     doors: [{ side: 'w', at: 37, w: 4.5, h: 4.6, mat: 'darkSteel' }],
   });
   building(b, { x0: 107, z0: 6, x1: 132, z1: 52, h: 18, wall: 'brick', windows: true, seed: 8 });
@@ -224,7 +224,7 @@ function buildSign(b) {
 }
 
 // ---------------- trees (instanced) ----------------
-function makeTree(seed, { height = 6, crown = 2.6, leafSize = 1.5, clusters = 34 } = {}) {
+function makeTree(seed, { height = 6, crown = 2.6, leafSize = 1.5, clusters = 34, bush = false } = {}) {
   const rand = mulberry32(seed);
   const trunk = [];
   const leaves = new Geo();
@@ -233,11 +233,13 @@ function makeTree(seed, { height = 6, crown = 2.6, leafSize = 1.5, clusters = 34
   // trunk
   const lean = V((rand() - 0.5) * 0.4, 0, (rand() - 0.5) * 0.4);
   const tTop = V(lean.x, height * 0.55, lean.z);
-  trunk.push(cylinderBetween(V(0, -0.2, 0), V(lean.x * 0.5, height * 0.3, lean.z * 0.5), 0.2, 8, false, 0.16));
-  trunk.push(cylinderBetween(V(lean.x * 0.5, height * 0.3, lean.z * 0.5), tTop, 0.16, 8, false, 0.12));
+  if (!bush) {
+    trunk.push(cylinderBetween(V(0, -0.2, 0), V(lean.x * 0.5, height * 0.3, lean.z * 0.5), 0.2, 8, false, 0.16));
+    trunk.push(cylinderBetween(V(lean.x * 0.5, height * 0.3, lean.z * 0.5), tTop, 0.16, 8, false, 0.12));
+  }
   const grow = (p, dir, len, r, depth) => {
     const e = p.clone().addScaledVector(dir, len);
-    trunk.push(cylinderBetween(p, e, r, 6, false, r * 0.65));
+    if (!bush) trunk.push(cylinderBetween(p, e, r, depth >= 1 ? 5 : 3, false, r * 0.65));
     if (depth <= 0) {
       tips.push(e);
       return;
@@ -298,7 +300,7 @@ function makeTree(seed, { height = 6, crown = 2.6, leafSize = 1.5, clusters = 34
       leaves.tri(base, base + 2, base + 3);
     }
   }
-  return { trunk: mergeGeos(trunk), leaves: leaves.toGeometry() };
+  return { trunk: trunk.length ? mergeGeos(trunk) : null, leaves: leaves.toGeometry() };
 }
 
 function makeLeavesGeo(geo) {
@@ -312,47 +314,50 @@ function makeLeavesGeo(geo) {
 
 function buildTrees(group, M, spots) {
   const variants = [
-    makeTree(11, { height: 7.5, crown: 3.0, leafSize: 1.7, clusters: 46 }),
-    makeTree(23, { height: 9.5, crown: 2.6, leafSize: 1.6, clusters: 52 }),
-    makeTree(37, { height: 5.0, crown: 2.0, leafSize: 1.3, clusters: 30 }),
+    makeTree(11, { height: 7.5, crown: 3.0, leafSize: 2.0, clusters: 60 }),
+    makeTree(23, { height: 9.5, crown: 2.7, leafSize: 1.9, clusters: 64 }),
+    makeTree(37, { height: 5.0, crown: 2.0, leafSize: 1.6, clusters: 40 }),
+    makeTree(51, { height: 0.9, crown: 0.75, leafSize: 0.85, clusters: 16, bush: true }),
   ];
   const leafMat = M.leaves.clone();
   leafMat.vertexColors = true;
   const per = variants.map(() => []);
   const rand = mulberry32(5);
   for (const s of spots) {
-    const vi = s.variant ?? Math.floor(rand() * variants.length);
+    const vi = s.variant ?? Math.floor(rand() * 3);
     per[vi].push(s);
   }
   const dummy = new THREE.Object3D();
+  const inside = (p) => Math.abs(p.x) < 92 && Math.abs(p.z) < 92;
   variants.forEach((v, vi) => {
-    const list = per[vi];
-    if (!list.length) return;
-    const trunk = new THREE.InstancedMesh(v.trunk, M.bark, list.length);
-    const leaves = new THREE.InstancedMesh(makeLeavesGeo(v.leaves), leafMat, list.length);
-    list.forEach((s, i) => {
-      dummy.position.copy(s.pos);
-      dummy.rotation.set(0, s.rot ?? rand() * Math.PI * 2, 0);
-      dummy.scale.setScalar(s.scale ?? 0.85 + rand() * 0.35);
-      dummy.updateMatrix();
-      trunk.setMatrixAt(i, dummy.matrix);
-      leaves.setMatrixAt(i, dummy.matrix);
-    });
-    for (const m of [trunk, leaves]) {
-      m.castShadow = true;
-      m.receiveShadow = true;
-      m.computeBoundingSphere();
-      group.add(m);
+    for (const cast of [true, false]) {
+      const list = per[vi].filter((s) => inside(s.pos) === cast);
+      if (!list.length) continue;
+      const meshes = [];
+      if (v.trunk) meshes.push(new THREE.InstancedMesh(v.trunk, M.bark, list.length));
+      meshes.push(new THREE.InstancedMesh(makeLeavesGeo(v.leaves), leafMat, list.length));
+      list.forEach((s, i) => {
+        dummy.position.copy(s.pos);
+        dummy.rotation.set(0, s.rot ?? rand() * Math.PI * 2, 0);
+        dummy.scale.setScalar(s.scale ?? 0.85 + rand() * 0.35);
+        dummy.updateMatrix();
+        for (const m of meshes) m.setMatrixAt(i, dummy.matrix);
+      });
+      for (const m of meshes) {
+        m.castShadow = cast;
+        m.receiveShadow = true;
+        m.computeBoundingSphere();
+        m.name = `trees:${vi}:${cast ? 'in' : 'out'}`;
+        group.add(m);
+      }
     }
-    trunk.name = 'trees:trunk' + vi;
-    leaves.name = 'trees:leaves' + vi;
   });
 }
 
 function treeSpots(parkTrees) {
   const rand = mulberry32(77);
   const spots = [];
-  for (const p of parkTrees) spots.push({ pos: p, variant: 2, scale: 0.8 + rand() * 0.2 });
+  for (const p of parkTrees) spots.push(p.isVector3 ? { pos: p, variant: 2, scale: 0.8 + rand() * 0.2 } : p);
   // berm on the hill
   for (let x = -80; x < 8; x += 7 + rand() * 5) spots.push({ pos: V(x, hillY(x) + 0.15, 80.5 + rand() * 3), variant: rand() < 0.5 ? 0 : 1 });
   // north-east grass strip
@@ -452,7 +457,7 @@ export function buildScenery(b, group, M, park) {
   buildOuterGround(b);
   buildBuildings(b);
   buildSign(b);
-  buildTrees(group, M, treeSpots(park.trees));
+  buildTrees(group, M, treeSpots([...park.trees, ...park.treeSpecs]));
   buildDistant(group, M);
 }
 

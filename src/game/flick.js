@@ -37,10 +37,19 @@ export const TRICKS = {
   '2,1': 'Double Varial Kickflip',
   '-2,-1': 'Double Varial Heelflip',
   '2,2': 'Double 360 Flip',
+  '0,3': '540 Shove-it',
+  '0,-3': 'FS 540 Shove-it',
+  '0,4': '720 Shove-it',
+  '2,4': 'Double 360 Flip',
+  '-2,-4': 'Double Laser Flip',
+  '2,-2': 'Double Hardflip',
+  '-2,2': 'Double Inward Heelflip',
+  '1,3': '540 Flip',
+  '-1,-3': '540 Laser Flip',
 };
 
-export function trickName(flips, shove, nollie, fakie) {
-  let base = TRICKS[`${flips},${shove}`];
+export function trickName(flips, shove, nollie, fakie, imp = 0) {
+  let base = imp ? (Math.abs(imp) > 1 ? `${Math.abs(imp) === 2 ? 'Double' : Math.abs(imp) + 'x'} Impossible` : 'Impossible') : TRICKS[`${flips},${shove}`];
   if (!base) {
     const parts = [];
     if (shove) parts.push(`${Math.abs(shove) * 180} ${shove > 0 ? 'BS' : 'FS'} Shove`);
@@ -238,6 +247,7 @@ export class FlickRecognizer {
     const flickTime = this.leaveT > 0 ? Math.max(0, endT - this.leaveT) : 0.12;
     let flips = 0;
     let shove = 0;
+    let imp = 0;
     if (aS < 60) {
       if (endU > 0.32) flips = 1;
       else if (endU < -0.32) flips = -1;
@@ -257,15 +267,18 @@ export class FlickRecognizer {
     } else if (aS < 205) {
       shove = 2 * Math.sign(S);
       if (Math.abs(endU) > 0.45 && Math.sign(endU) === -Math.sign(S)) flips = Math.sign(S); // 360 flip / laser
-    } else {
+    } else if (aS < 300) {
       shove = 2 * Math.sign(S);
       flips = Math.sign(S);
+    } else {
+      // all the way around: the board wraps end-over-end around the back foot
+      imp = Math.sign(S);
     }
     // pop power: fast, committed flicks after a full load pop higher
     const speedFactor = Math.max(0, Math.min(1, 1 - (flickTime - 0.05) / 0.3));
     const power = Math.max(0.25, Math.min(1, 0.35 + 0.45 * speedFactor + 0.25 * this.loadedAmount));
     this.state = 'cooldown';
-    return { type: 'pop', nose: this.nose, flips, shove, power, late: false };
+    return { type: 'pop', nose: this.nose, flips, shove, imp, power, late: false };
   }
 
   _lateFlick(u, v) {

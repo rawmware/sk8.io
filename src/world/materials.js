@@ -50,6 +50,21 @@ export function createMaterials(tex) {
     tex.macro,
     0.2
   );
+  M.concreteB = addMacro(
+    std({
+      name: 'concreteB',
+      color: 0xb4b1ac,
+      map: tex.concrete.map,
+      normalMap: tex.concrete.normalMap,
+      normalScale: new THREE.Vector2(0.9, 0.9),
+      roughnessMap: tex.concrete.roughnessMap,
+      roughness: 1,
+      metalness: 0,
+    }),
+    tex.macro,
+    0.18,
+    0.016
+  );
   // cast concrete for ledges/blocks/stairs: smooth maps with warmer tint
   M.castConcrete = addMacro(
     std({
@@ -114,7 +129,7 @@ export function createMaterials(tex) {
     normalMap: tex.skatelite.normalMap,
     normalScale: new THREE.Vector2(0.6, 0.6),
     roughnessMap: tex.skatelite.roughnessMap,
-    roughness: 1.45,
+    roughness: 1.5,
     metalnessMap: tex.skatelite.roughnessMap,
     metalness: 0.6,
   });

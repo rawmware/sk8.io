@@ -247,26 +247,70 @@ function rect(x0, z0, x1, z1) {
   ];
 }
 
+export const ZONES = { plaza: [-42, -32, 42, 46] };
+
 function buildGround(b, bowlHole) {
   const add = (poly, holes, mat, surf, visual = true) => {
     const g = flatPolygon(poly, holes, 0);
     if (visual) b.add(g, mat, surf, { cast: false });
     else b.collider(g, surf);
   };
-  add(rect(-PARK, -PARK, PARK, -32), [bowlHole], 'concrete', 'concrete');
-  add(rect(-PARK, -32, PARK, HILL.parapet[0]), [], 'concrete', 'concrete');
-  add(rect(-PARK, HILL.parapet[0], HILL.x1, PARK), [], 'concrete', 'concrete', false);
-  add(rect(HILL.x1, HILL.parapet[0], PARK, HILL.road[0]), [], 'concrete', 'concrete');
+  const [px0, pz0, px1, pz1] = ZONES.plaza;
+  const zN = HILL.parapet[0];
+  // transition zone (smooth, lighter), with the bowl cut out
+  add(rect(-PARK, -PARK, PARK, pz0), [bowlHole], 'smoothConcrete', 'smoothConcrete');
+  // street plaza (jointed concrete)
+  add(rect(px0, pz0, px1, pz1), [], 'concrete', 'concrete');
+  // side strips (darker jointed concrete)
+  add(rect(-PARK, pz0, px0, zN), [], 'concreteB', 'concrete');
+  add(rect(px1, pz0, PARK, zN), [], 'concreteB', 'concrete');
+  add(rect(px0, pz1, px1, zN), [], 'concreteB', 'concrete');
+  // north: under the hill (collider only), run-out
+  add(rect(-PARK, zN, HILL.x1, PARK), [], 'concrete', 'concrete', false);
+  add(rect(HILL.x1, zN, PARK, HILL.road[0]), [], 'concreteB', 'concrete');
   add(rect(HILL.x1, HILL.road[0], PARK, HILL.road[1]), [], 'asphalt', 'asphalt');
   add(rect(HILL.x1, HILL.road[1], PARK, PARK), [], 'grass', 'grass');
-  // decorative paver bands around the plaza (visual only, flush)
-  const band = (x0, z0, x1, z1) => {
-    const g = flatPolygon(rect(x0, z0, x1, z1), [], 0.002);
-    b.add(g, 'paver', null, { cast: false });
-  };
-  band(-41, -31, 41, -30.2);
-  band(-41, 45.2, 41, 46);
-  void band;
+  // decorative paver bands framing the plaza (visual only, flush)
+  const band = (x0, z0, x1, z1) => b.add(flatPolygon(rect(x0, z0, x1, z1), [], 0.002), 'paver', null, { cast: false });
+  band(px0, pz0, px1, pz0 + 0.8);
+  band(px0, pz1 - 0.8, px1, pz1);
+  band(px0, pz0 + 0.8, px0 + 0.8, pz1 - 0.8);
+  band(px1 - 0.8, pz0 + 0.8, px1, pz1 - 0.8);
+  // pool deck pavers around the bowl
+}
+
+// Landscaped grass island with a low concrete curb (grindable) and trees.
+function island(b, out, x0, z0, x1, z1, nTrees, seed) {
+  const h = 0.16;
+  const w = 0.3;
+  const m = 'castConcrete';
+  b.add(boxMM(x0, 0, z0, x1, h, z0 + w), m, 'concrete', { worldUV: true });
+  b.add(boxMM(x0, 0, z1 - w, x1, h, z1), m, 'concrete', { worldUV: true });
+  b.add(boxMM(x0, 0, z0 + w, x0 + w, h, z1 - w), m, 'concrete', { worldUV: true });
+  b.add(boxMM(x1 - w, 0, z0 + w, x1, h, z1 - w), m, 'concrete', { worldUV: true });
+  b.add(boxMM(x0 + w, 0, z0 + w, x1 - w, h - 0.03, z1 - w), 'grass', 'grass', { worldUV: true, cast: false });
+  b.rail(V(x0 + 0.05, h, z0), V(x1 - 0.05, h, z0), 'concrete', 0.02);
+  b.rail(V(x0 + 0.05, h, z1), V(x1 - 0.05, h, z1), 'concrete', 0.02);
+  b.rail(V(x0, h, z0 + 0.05), V(x0, h, z1 - 0.05), 'concrete', 0.02);
+  b.rail(V(x1, h, z0 + 0.05), V(x1, h, z1 - 0.05), 'concrete', 0.02);
+  let r = seed * 9301 + 49297;
+  const rnd = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
+  for (let i = 0; i < nTrees; i++) {
+    out.treeSpecs.push({ pos: V(x0 + 2 + rnd() * (x1 - x0 - 4), h - 0.03, z0 + 2 + rnd() * (z1 - z0 - 4)), variant: Math.floor(rnd() * 3) });
+  }
+  const nb = Math.round(((x1 - x0) * (z1 - z0)) / 22);
+  for (let i = 0; i < nb; i++) {
+    out.treeSpecs.push({ pos: V(x0 + 1 + rnd() * (x1 - x0 - 2), h - 0.03, z0 + 1 + rnd() * (z1 - z0 - 2)), variant: 3, scale: 0.7 + rnd() * 0.7 });
+  }
+}
+
+function buildIslands(b, out) {
+  island(b, out, -72, 40, -48, 56, 5, 1);
+  island(b, out, 46, 38, 74, 55, 5, 2);
+  island(b, out, -82, -82, -66, -68, 3, 3);
+  island(b, out, -34, -42, -14, -36, 3, 4);
+  island(b, out, 8, -42, 28, -36, 3, 5);
+  island(b, out, 64, -62, 82, -46, 3, 6);
 }
 
 // ---------------- Plaza ----------------
@@ -584,9 +628,10 @@ export function edgeHeight(x, z) {
 }
 
 export function buildPark(b) {
-  const out = { spots: [], trees: [], props: [] };
+  const out = { spots: [], trees: [], treeSpecs: [], props: [] };
   const bowl = buildTransitions(b, out);
   buildGround(b, bowl.hole);
+  buildIslands(b, out);
   buildPlaza(b, out);
   buildHill(b);
   out.spots.unshift({ name: 'plaza', position: V(0, 0, -1), yaw: 0 });

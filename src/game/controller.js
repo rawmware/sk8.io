@@ -24,6 +24,27 @@ const _hit2 = { point: new THREE.Vector3(), normal: new THREE.Vector3(), distanc
 
 const GRAB_NAMES = { indy: 'Indy', melon: 'Melon', nose: 'Nose Grab', tail: 'Tail Grab', stalefish: 'Stalefish', mute: 'Mute' };
 
+// Grind/slide poses. z: where along the board the rail touches (board-local), h: height of that
+// contact above the wheel-contact plane, pitch (+ = nose down), yaw/roll tweaks (signed toward the
+// side the rider came from), fr: friction multiplier.
+const TRUCK_H = BOARD.wheelRadius + 0.006;
+const AX = BOARD.truckAxleZ;
+const GRINDS = {
+  '50-50': { slide: false, z: 0, h: TRUCK_H, pitch: 0, fr: 1.0 },
+  '5-0': { slide: false, z: -AX, h: TRUCK_H, pitch: -0.2, fr: 1.15 },
+  Nosegrind: { slide: false, z: AX, h: TRUCK_H, pitch: 0.2, fr: 1.15 },
+  'Smith Grind': { slide: false, z: -AX, h: TRUCK_H, pitch: 0.24, yaw: 0.22, roll: 0.32, fr: 1.3 },
+  'Feeble Grind': { slide: false, z: -AX, h: TRUCK_H, pitch: 0.2, yaw: -0.22, roll: -0.28, fr: 1.3 },
+  'Crooked Grind': { slide: false, z: AX, h: TRUCK_H, pitch: 0.16, yaw: -0.3, roll: -0.18, fr: 1.4 },
+  Overcrook: { slide: false, z: AX, h: TRUCK_H, pitch: 0.16, yaw: 0.3, roll: 0.18, fr: 1.4 },
+  Boardslide: { slide: true, z: 0, h: BOARD.deckBottomY, pitch: 0, fr: 1.5 },
+  Lipslide: { slide: true, z: 0, h: BOARD.deckBottomY, pitch: 0, fr: 1.5 },
+  Noseslide: { slide: true, z: 0.33, h: BOARD.deckBottomY + 0.008, pitch: 0.1, fr: 1.6 },
+  Tailslide: { slide: true, z: -0.33, h: BOARD.deckBottomY + 0.008, pitch: -0.1, fr: 1.6 },
+  Bluntslide: { slide: true, z: -0.37, h: BOARD.deckBottomY + 0.02, pitch: -0.95, fr: 1.85 },
+  Noseblunt: { slide: true, z: 0.37, h: BOARD.deckBottomY + 0.02, pitch: 0.95, fr: 1.85 },
+};
+
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const damp = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
@@ -85,11 +106,21 @@ export class SkaterController {
     this.railCooldown = new Map();
     this.boardYawOffset = 0;
     this.wheelSpin = 0;
+    this.vis = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), rate: 22, active: false };
+    this.susp = { y: 0, v: 0 };
+    this.wobble = 0;
+    this.grabTw = { r: 0, p: 0 };
+    this.revert = null;
+    this.revertVis = 0;
+    this.revertWindow = 0;
+    this.airPrefix = '';
+    this.airTrick = null;
+    this.lateTrick = null;
+    this.airGesture = null;
     this.lean = 0;
     this.bailT = 0;
     this.bailReason = '';
     this.popped = false;
-    this.airTrickName = null;
     this.flickAnim = 0;
     this.flickT = 1;
     this.lineTimer = 0;
@@ -160,6 +191,21 @@ export class SkaterController {
     const v = input.flick.y;
     const canLoad = this.mode === 'ground' || this.mode === 'grind';
     const holdMode = !!(input.flickHold || input.flickRelease);
+    // mouse late flips: in the air (nothing left to catch) hold, flick a direction, release
+    if (this.mode === 'air' && !(this.trick && !this.trick.caught) && !this.lateTrick) {
+      if (input.flickPress) this.airGesture = { u: 0, v: 0, strong: false };
+      const ag = this.airGesture;
+      if (ag && input.flickHold && Math.hypot(u, v) > 0.55) {
+        ag.u = u;
+        ag.v = v;
+        ag.strong = true;
+      }
+      if (ag && input.flickRelease) {
+        this.airGesture = null;
+        const e = ag.strong ? this.flick._lateFlick(ag.u, ag.v) : null;
+        if (e && this.airTime > 0.08) this._startTrick(e.flips, e.shove, false, true);
+      }
+    }
     const lateAllowed = !holdMode && !this.trick && this.airTime > 0.1 && this._heightAboveGround() > 0.5;
     if (input.flickPress && canLoad) this.flick.reset();
     let ev = this.flick.update(dt, u, v, { canLoad, airborne: this.mode === 'air', lateAllowed, manual: holdMode });
@@ -211,10 +257,29 @@ export class SkaterController {
     }
     this.popT += dt;
     this.flickT = Math.min(1, this.flickT + dt / 0.28);
+    // snap smoothing decays back to the true pose
+    if (this.vis.active) {
+      const k = Math.exp(-this.vis.rate * dt);
+      this.vis.pos.multiplyScalar(k);
+      this.vis.quat.slerp(_q2.identity(), 1 - k);
+      if (this.vis.pos.lengthSq() < 1e-8 && Math.abs(this.vis.quat.w) > 0.99999) this.vis.active = false;
+    }
+    // truck/bushing suspension (visual): stiff spring, quick damping
+    const sp = this.susp;
+    sp.v += (-700 * sp.y - 34 * sp.v) * dt;
+    sp.y = clamp(sp.y + sp.v * dt, -0.035, 0.03);
+    this.wobble = damp(this.wobble, 0, 3.5, dt);
+    this.revertWindow = Math.max(0, this.revertWindow - dt);
+    // grab tweaks tilt the board
+    const gt = { indy: [0.32, -0.1], melon: [-0.32, -0.1], nose: [0, 0.3], tail: [0, -0.3], stalefish: [-0.4, 0.15], mute: [0.4, 0.15] }[this.grab] || [0, 0];
+    this.grabTw.r = damp(this.grabTw.r, gt[0] * this.heelSign, 9, dt);
+    this.grabTw.p = damp(this.grabTw.p, gt[1], 9, dt);
+    if (Math.abs(this.grabTw.r) < 1e-4) this.grabTw.r = 0;
+    if (Math.abs(this.grabTw.p) < 1e-4) this.grabTw.p = 0;
     const crouchTarget = this.loading ? 1 : this.mode === 'air' ? 0.15 : 0.12;
     this.crouch = damp(this.crouch, Math.max(crouchTarget, this.landCompress), this.loading ? 16 : 9, dt);
     this.landCompress = damp(this.landCompress, 0, 5, dt);
-    this.lean = damp(this.lean, this.mode === 'ground' ? input.steer : this.mode === 'air' ? input.steer * 0.5 : 0, 6, dt);
+    this.lean = damp(this.lean, this.mode === 'ground' || this.mode === 'grind' ? input.steer : input.steer * 0.5, this.mode === 'ground' ? 7 : 5, dt);
     for (const [r, t] of this.railCooldown) {
       if (t - dt <= 0) this.railCooldown.delete(r);
       else this.railCooldown.set(r, t - dt);
@@ -273,12 +338,32 @@ export class SkaterController {
     if (this.manual) this.manualT += dt;
 
     // ---- steering (carving) ----
-    const powersliding = this.slide > 0.3;
+    // revert: right after landing, brake + steer whips the board 180 on its wheels
+    if (!this.revert && this.revertWindow > 0 && input.brake && Math.abs(input.steer) > 0.5 && speed > 1) {
+      this.revert = { left: Math.PI * Math.sign(input.steer), t: 0 };
+      this.revertWindow = 0;
+      this.emit('powerslide');
+    }
+    if (this.revert) {
+      const r = this.revert;
+      const stepA = Math.sign(r.left) * Math.min(Math.abs(r.left), (Math.PI / 0.24) * dt);
+      this.rotateAround(n, stepA);
+      r.left -= stepA;
+      r.t += dt;
+      if (Math.abs(r.left) < 1e-4) {
+        this.revert = null;
+        this._trickCallout('Revert');
+      }
+    }
+    const powersliding = this.slide > 0.3 || !!this.revert;
     if (!powersliding) {
+      // the board turns from how far the rider is leaning (smoothed), not the raw key
       const maxRate = speed < 0.6 ? 2.4 : Math.min(2.3, speed / 1.45 + 0.35);
-      const rate = input.steer * maxRate * (this.manual ? 0.55 : 1) * (this.loading ? 0.75 : 1);
+      const rate = this.lean * maxRate * (this.manual ? 0.55 : 1) * (this.loading ? 0.75 : 1);
       this.rotateAround(n, rate * dt);
       this.vel.applyAxisAngle(n, rate * dt);
+      // carving scrubs a little speed
+      if (speed > 0.5) this.vel.multiplyScalar(1 - Math.abs(rate) * 0.012 * dt);
     }
 
     // ---- forces ----
@@ -329,14 +414,14 @@ export class SkaterController {
     // ---- wheel grip: kill lateral velocity ----
     this.fwd(fwd);
     const lat = _v3.copy(this.vel).addScaledVector(fwd, -this.vel.dot(fwd)).addScaledVector(n, -this.vel.dot(n));
-    const grip = this.slide > 0.4 ? 1.2 : 18;
+    const grip = this.revert ? 0.6 : this.slide > 0.4 ? 1.2 : 18;
     this.vel.addScaledVector(lat, -(1 - Math.exp(-grip * dt)));
     this.vel.addScaledVector(n, -this.vel.dot(n));
     speed = this.vel.length();
     if (speed < 0.05 && !input.push && Math.abs(G.dot(fwd)) < 0.3) this.vel.set(0, 0, 0);
 
     // keep the rider pointed along travel (wheels roll where they point)
-    if (speed > 0.5 && this.slide < 0.3) {
+    if (speed > 0.5 && this.slide < 0.3 && !this.revert) {
       const a = this.vel.dot(this.fwd(_v1)) < 0 ? -1 : 1;
       _v2.copy(this.vel).multiplyScalar(a / speed);
       const f = this.fwd(_v1);
@@ -431,8 +516,13 @@ export class SkaterController {
     const fwd = this.fwd(_v2);
     const fakie = this.vel.dot(fwd) < -0.2;
     let popSpeed = 2.05 + 1.75 * ev.power;
-    if (this.mode === 'grind') {
+    const fromGrind = this.mode === 'grind';
+    let popOut = null;
+    if (fromGrind) {
       popSpeed *= 0.8;
+      // steer while popping out to hop off to either side of the rail
+      const g = this.grind;
+      popOut = new THREE.Vector3().crossVectors(Y, g.dir).normalize().multiplyScalar(this.lean * 1.6);
       this._endGrind(false);
     }
     if (this.manual) {
@@ -442,6 +532,7 @@ export class SkaterController {
     const dir = _v3.copy(up);
     if (up.y > 0.3) dir.multiplyScalar(0.82).addScaledVector(Y, 0.18).normalize();
     this.vel.addScaledVector(dir, popSpeed);
+    if (popOut) this.vel.add(popOut);
     // pre-wound spin
     this.spinRate = this.lean * 4.2;
     this.exitTurn = 0;
@@ -458,20 +549,25 @@ export class SkaterController {
     this.landingNormal.copy(this.normal);
     this.predictT = 0;
     this.airFakie = fakie && !ev.nose;
-    this.airTrickName = trickName(0, 0, ev.nose, this.airFakie);
+    this.airPrefix = ev.nose ? 'Nollie ' : this.airFakie ? 'Fakie ' : '';
+    this.airTrick = null; // set when a flip trick is caught
+    this.lateTrick = null;
+    this.airGesture = null;
     this.trick = null;
-    if (ev.flips || ev.shove) this._startTrick(ev.flips, ev.shove, ev.nose, false);
+    if (ev.flips || ev.shove || ev.imp) this._startTrick(ev.flips, ev.shove, ev.nose, false, ev.imp || 0);
     this.emit('pop', { power: ev.power });
   }
 
   // Tricks rotate continuously until the rider catches them. One period T brings the board
   // back upright once (a kickflip); catching after 2T makes it a double, etc.
-  _startTrick(flips, shove, nollie, late) {
+  _startTrick(flips, shove, nollie, late, imp = 0) {
     const hs = this.heelSign;
-    const T = 0.26 + 0.08 * Math.abs(flips) + 0.06 * Math.abs(shove);
+    const T = imp ? 0.4 : 0.26 + 0.08 * Math.abs(flips) + 0.06 * Math.abs(shove);
     this.trick = {
       flips,
       shove,
+      imp,
+      impPer: -imp * Math.PI * 2 * (nollie ? -1 : 1),
       nollie,
       t: 0,
       vt: 0,
@@ -513,13 +609,10 @@ export class SkaterController {
     tr.quality = q;
     tr.catchT = q === 'bad' ? tr.t : k * tr.T;
     // early catches keep rotating into place; the visual time eases to catchT
-    if (q !== 'bad') {
-      const base = trickName(tr.flips * k, tr.shove * k, tr.nollie, false);
-      const late = tr.late ? 'Late ' : '';
-      if (k === 0) {
-        if (!tr.late) this.airTrickName = trickName(0, 0, tr.nollie, this.airFakie);
-      } else if (tr.late) this.airTrickName = (this.airTrickName && this.airTrickName !== 'Ollie' ? this.airTrickName + ' ' : '') + late + base;
-      else this.airTrickName = (this.airFakie ? 'Fakie ' : '') + base;
+    if (q !== 'bad' && k > 0) {
+      const done = { flips: tr.flips * k, shove: tr.shove * k, imp: tr.imp * k, nollie: tr.nollie };
+      if (tr.late) this.lateTrick = done;
+      else this.airTrick = done;
     }
     this.emit('catch', { quality: q });
   }
@@ -541,7 +634,9 @@ export class SkaterController {
 
     // spin control (around the rider's up axis)
     const up = this.up(_v1);
-    if (Math.abs(input.steer) > 0.1) this.spinRate = damp(this.spinRate, input.steer * 7.2, 5.5, dt);
+    // holding W/S turns A/D into grind modifiers (smith, feeble, crooked, blunts) instead of spinning
+    const spinInput = input.nose || input.tail ? 0 : input.steer;
+    if (Math.abs(spinInput) > 0.1) this.spinRate = damp(this.spinRate, spinInput * 7.2, 5.5, dt);
     else this.spinRate = damp(this.spinRate, 0, 2.6, dt);
     this.rotateAround(up, this.spinRate * dt);
     this.spinTotal += this.spinRate * dt;
@@ -680,6 +775,9 @@ export class SkaterController {
     this.rotateAround(m, yawFix * (sketchy ? 0.7 : 1));
     this.vel.copy(vt).multiplyScalar(sketchy ? 0.82 : 0.975);
     this.landCompress = clamp(vn / 6.5, 0.25, 1);
+    this.susp.v -= clamp(vn * 0.09, 0.05, 0.6);
+    if (sketchy) this.wobble = 0.16;
+    this.revertWindow = 0.45;
     this.groundT = 0;
     if (this.trick) {
       this.trick = null;
@@ -690,33 +788,56 @@ export class SkaterController {
 
     const name = this._composeAirName();
     if (name) this._trickCallout(name, sketchy ? 'sketchy' : 'clean');
-    this.popped = false;
-    this.airTrickName = null;
-    this.grab = null;
-    this.grabs.clear();
+    this._resetAirNaming();
     this.spinRate = 0;
     if (this.flick.state !== 'idle') this.flick.reset();
   }
 
+  // Builds the name of everything done in this air: spins, the flip trick, late tricks, grabs.
   _composeAirName() {
     const parts = [];
     const deg = Math.abs(this.spinTotal) * (180 / Math.PI);
     const spins = Math.round(deg / 180) * 180;
-    if (spins >= 180) {
-      // positive yaw = frontside for regular riders
-      const fs = Math.sign(this.spinTotal) * this.heelSign > 0;
-      parts.push(`${fs ? 'FS' : 'BS'} ${spins}`);
-    }
-    let base = this.airTrickName;
-    if (base === 'Ollie' && parts.length) base = null;
-    if (base) parts.push(base);
+    // positive yaw = frontside for regular riders
+    const side = Math.sign(this.spinTotal) * this.heelSign > 0 ? 'FS' : 'BS';
+    const t = this.airTrick;
+    const prefix = this.airPrefix || '';
+    if (t) {
+      const a = Math.abs(t.shove);
+      if (spins === 180 && !t.imp && t.shove === 0 && Math.abs(t.flips) === 1) parts.push(`${prefix}${side} ${t.flips > 0 ? 'Flip' : 'Heelflip'}`);
+      else if (spins === 180 && !t.imp && a === 2) parts.push(`${prefix}${t.flips ? (t.flips > 0 ? 'Bigspin Flip' : 'Bigspin Heelflip') : 'Bigspin'}`);
+      else {
+        if (spins >= 180) parts.push(`${prefix}${side} ${spins}`);
+        parts.push((spins >= 180 ? '' : prefix) + trickName(t.flips, t.shove, false, false, t.imp));
+      }
+    } else if (spins >= 180) parts.push(`${prefix}${side} ${spins}`);
+    else if (this.popped) parts.push(prefix ? prefix.trim() === 'Nollie' ? 'Nollie' : prefix + 'Ollie' : 'Ollie');
+    if (this.lateTrick) parts.push('Late ' + trickName(this.lateTrick.flips, this.lateTrick.shove, false, false, this.lateTrick.imp));
     for (const g of this.grabs) parts.push(GRAB_NAMES[g]);
     if (!parts.length && this.airTime > 0.55) parts.push('Air');
     this.spinTotal = 0;
     return parts.join(' ');
   }
 
+  _resetAirNaming() {
+    this.popped = false;
+    this.airTrick = null;
+    this.lateTrick = null;
+    this.airPrefix = '';
+    this.airGesture = null;
+    this.grabs.clear();
+    this.grab = null;
+    this.spinTotal = 0;
+  }
+
   // ---------------------------------------------------------------------------------------
+  // Grinds & slides. Locking on is automatic when the board drops onto a rail/ledge edge; the
+  // board's angle to the rail picks the family (trucks vs. board), the stick picks the variation:
+  //   trucks:  none 50-50 · back (S) 5-0 · fwd (W) nosegrind · S+toward rail smith · S+away feeble
+  //            W+toward crooked · W+away overcrook
+  //   slides:  none boardslide/lipslide · W noseslide · S tailslide · W+steer noseblunt · S+steer bluntslide
+  // Pressing a new direction mid-grind switches (50-50 to 5-0 ...). Flip tricks caught before the rail
+  // become flip-in grinds ("Kickflip BS Bluntslide").
   _tryGrind(input) {
     if (!this.rails.length) return false;
     const cp = _v1.copy(this.pos).addScaledVector(Y, 0.06);
@@ -727,31 +848,30 @@ export class SkaterController {
       const ab = _v2.subVectors(rail.b, rail.a);
       const L2 = ab.lengthSq();
       if (L2 < 1e-6) continue;
-      // quick reject
-      const minX = Math.min(rail.a.x, rail.b.x) - 0.5, maxX = Math.max(rail.a.x, rail.b.x) + 0.5;
-      const minZ = Math.min(rail.a.z, rail.b.z) - 0.5, maxZ = Math.max(rail.a.z, rail.b.z) + 0.5;
+      const minX = Math.min(rail.a.x, rail.b.x) - 0.6, maxX = Math.max(rail.a.x, rail.b.x) + 0.6;
+      const minZ = Math.min(rail.a.z, rail.b.z) - 0.6, maxZ = Math.max(rail.a.z, rail.b.z) + 0.6;
       if (cp.x < minX || cp.x > maxX || cp.z < minZ || cp.z > maxZ) continue;
       let t = _v3.subVectors(cp, rail.a).dot(ab) / L2;
       const L = Math.sqrt(L2);
-      if (t < -0.05 / L || t > 1 + 0.05 / L) continue;
-      t = clamp(t, 0, 1);
+      if (t < -0.08 / L || t > 1 + 0.08 / L) continue;
+      t = clamp(t, 0.002, 0.998);
       const c = _v3.copy(rail.a).addScaledVector(ab, t);
       const dir = ab.divideScalar(L);
       const d = new THREE.Vector3().subVectors(cp, c);
       d.addScaledVector(dir, -d.dot(dir));
-      // vertical-ish offset measured along the rail's up
       const railUp = new THREE.Vector3().copy(Y).addScaledVector(dir, -Y.dot(dir)).normalize();
       const dy = d.dot(railUp);
       const horiz = Math.sqrt(Math.max(0, d.lengthSq() - dy * dy));
       const vAlong = this.vel.dot(dir);
       const vUp = this.vel.dot(railUp);
-      if (horiz > 0.22 || dy < -0.12 || dy > 0.22) continue;
-      if (Math.abs(vAlong) < 0.8) continue;
-      if (vUp > 1.2 && dy < 0) continue;
-      const score = horiz + Math.abs(dy);
+      // a forgiving catch zone: the board is magnetized onto rails it is dropping onto
+      if (horiz > 0.3 || dy < -0.16 || dy > 0.3) continue;
+      if (Math.abs(vAlong) < 0.7) continue;
+      if (vUp > 1.0 && dy < 0.02) continue;
+      const score = horiz + Math.abs(dy) * 1.5;
       if (score < bestD) {
         bestD = score;
-        best = { rail, c: c.clone(), dir: dir.clone(), t, railUp, L };
+        best = { rail, c: c.clone(), dir: dir.clone(), t, railUp, L, perp: d.clone() };
       }
     }
     if (!best) return false;
@@ -759,27 +879,42 @@ export class SkaterController {
     return true;
   }
 
+  // the grind the stick is asking for right now (null = no preference)
+  _wantedGrind(g, input) {
+    const nose = input.nose;
+    const tail = input.tail;
+    const steer = Math.abs(input.steer) > 0.35 ? Math.sign(input.steer) : 0;
+    // steering toward the far side of the rail (the side you didn't come from)
+    const left = _v1.crossVectors(Y, g.dir).normalize();
+    const toward = steer !== 0 && left.dot(g.approach) * steer < 0;
+    if (g.slide) {
+      if (nose) return steer ? 'Noseblunt' : 'Noseslide';
+      if (tail) return steer ? 'Bluntslide' : 'Tailslide';
+      return null;
+    }
+    if (tail) return steer ? (toward ? 'Feeble Grind' : 'Smith Grind') : '5-0';
+    if (nose) return steer ? (toward ? 'Overcrook' : 'Crooked Grind') : 'Nosegrind';
+    return null;
+  }
+
   _startGrind(g, input) {
     const { rail, c, railUp } = g;
+    const before = this._visualSnapBegin();
     const vAlong = this.vel.dot(g.dir);
     const gdir = g.dir.clone().multiplyScalar(Math.sign(vAlong) || 1);
     const fwd = this.fwd(new THREE.Vector3());
     const fwdH = fwd.clone().addScaledVector(railUp, -fwd.dot(railUp)).normalize();
     const cosA = Math.abs(fwdH.dot(gdir));
     const slide = cosA < 0.64;
-    // side the rail was approached from (toe side = frontside)
+    // which side of the rail the board came from (sideways velocity wins, else position)
+    const perpV = this.vel.clone().addScaledVector(gdir, -this.vel.dot(gdir)).addScaledVector(railUp, -this.vel.dot(railUp));
+    const approach = perpV.lengthSq() > 0.09 ? perpV.normalize().negate() : g.perp.clone().addScaledVector(railUp, -g.perp.dot(railUp));
+    if (approach.lengthSq() < 1e-6) approach.crossVectors(Y, gdir);
+    approach.normalize();
+    // toe side facing the rail = frontside
     const toe = this.side(new THREE.Vector3()).multiplyScalar(-this.heelSign);
-    const toRail = c.clone().sub(this.pos);
-    toRail.addScaledVector(gdir, -toRail.dot(gdir));
-    const fs = toRail.dot(toe) > 0;
-    const ledge = rail.kind === 'concrete' || rail.kind === 'wood';
-    let type;
-    const turn = Math.abs(input.steer) > 0.3;
-    if (slide) type = input.nose ? 'Noseslide' : input.tail ? 'Tailslide' : ledge ? 'Boardslide' : 'Boardslide';
-    else if (input.nose) type = turn ? 'Crooked Grind' : 'Nosegrind';
-    else if (input.tail) type = turn ? (input.steer * this.heelSign > 0 ? 'Smith Grind' : 'Feeble Grind') : '5-0';
-    else type = '50-50';
-    // orient rider frame
+    const fs = toe.dot(approach) < 0;
+    // orient rider frame along / across the rail
     let newF;
     if (slide) {
       newF = new THREE.Vector3().crossVectors(railUp, gdir).normalize();
@@ -792,69 +927,109 @@ export class SkaterController {
     _m1.makeBasis(xAxis, railUp, newF);
     this.quat.setFromRotationMatrix(_m1);
     const speed = Math.abs(vAlong);
-    this.grind = {
+    const grind = {
       rail,
       dir: gdir,
       up: railUp.clone(),
       c: c.clone(),
       speed,
       slide,
-      type,
-      name: `${fs ? 'FS' : 'BS'} ${type}`,
+      approach,
+      fs,
+      type: '50-50',
       kind: rail.kind,
       t: 0,
-      fwdSign: newF.dot(gdir) >= 0 ? 1 : -1,
+      chain: [],
+      pending: null,
+      pendingT: 0,
     };
-    // collision impact: kill the perpendicular velocity
-    this.vel.copy(gdir).multiplyScalar(speed);
-    this.mode = 'grind';
-    this.landCompress = 0.5;
+    // nose pointing back over the side you came from = the tail crossed the rail first (lipslide)
+    const base = slide ? (newF.dot(approach) > 0 ? 'Lipslide' : 'Boardslide') : '50-50';
+    grind.type = this._wantedGrind(grind, input) || base;
+    grind.chain.push(grind.type);
+    this.grind = grind;
+    // flip-in: the rail counts as the catch if the board is (nearly) back around
     if (this.trick) {
-      if (!this.trick.caught && this._uncaughtLanding() === 'bail') return this._bail("Didn't catch it");
-      if (this.trick.quality === 'bad') return this._bail('Caught it crooked');
+      if (!this.trick.caught) {
+        const { k, q } = this._catchQuality(this.trick.t, this.trick.T);
+        if (q === 'bad' || k === 0) {
+          this.grind = null;
+          return this._bail("Didn't catch it");
+        }
+        this._catch();
+        this.trick.quality = 'sketchy';
+      }
+      if (this.trick.quality === 'bad') {
+        this.grind = null;
+        return this._bail('Caught it crooked');
+      }
+      if (this.trick.quality === 'sketchy') grind.speed *= 0.85;
       this.trick = null;
     }
+    // speed into the rail; slamming down sideways costs a little
+    const impact = Math.max(0, -this.vel.dot(railUp));
+    grind.speed = Math.max(0.8, grind.speed * (slide ? 0.94 : 0.97) - impact * 0.05);
+    this.vel.copy(gdir).multiplyScalar(grind.speed);
+    this.mode = 'grind';
+    this.landCompress = 0.55;
+    this.susp.v -= clamp(impact * 0.06, 0.03, 0.3);
     const pre = this._composeAirName();
-    if (pre && pre !== 'Ollie' && pre !== 'Air') this._trickCallout(pre, 'clean');
-    this.airTrickName = null;
-    this.grabs.clear();
-    this.grab = null;
+    grind.prefix = pre && pre !== 'Ollie' && pre !== 'Air' && pre !== 'Nollie' && pre !== 'Fakie Ollie' ? pre + ' ' : '';
+    this._resetAirNaming();
     this.spinRate = 0;
+    this.exitTurn = 0;
     this._placeOnRail();
+    this._visualSnapEnd(before, 26);
     this.emit(slide ? 'slideStart' : 'grindStart', { kind: rail.kind });
+  }
+
+  get grindName() {
+    const g = this.grind;
+    if (!g) return '';
+    return `${g.prefix || ''}${g.fs ? 'FS' : 'BS'} ${g.chain.join(' to ')}`;
   }
 
   _placeOnRail() {
     const g = this.grind;
+    const spec = GRINDS[g.type] || GRINDS['50-50'];
     const fwd = this.fwd(_v1);
-    this.pos.copy(g.c);
-    if (g.slide) {
-      this.pos.addScaledVector(g.up, -BOARD.deckBottomY);
-      if (g.type === 'Noseslide') this.pos.addScaledVector(fwd, -0.3);
-      if (g.type === 'Tailslide') this.pos.addScaledVector(fwd, 0.3);
-    } else {
-      this.pos.addScaledVector(g.up, -(BOARD.wheelRadius + 0.006));
-      if (g.type === '5-0' || g.type === 'Smith Grind' || g.type === 'Feeble Grind') this.pos.addScaledVector(fwd, BOARD.truckAxleZ);
-      if (g.type === 'Nosegrind' || g.type === 'Crooked Grind') this.pos.addScaledVector(fwd, -BOARD.truckAxleZ);
-    }
+    this.pos.copy(g.c).addScaledVector(g.up, -spec.h).addScaledVector(fwd, -spec.z);
   }
 
   _grindStep(dt, input) {
     const g = this.grind;
+    const spec = GRINDS[g.type] || GRINDS['50-50'];
     g.t += dt;
-    const fr = (RAIL_KINDS[g.kind]?.friction ?? 0.8) * (g.slide ? 1.5 : 1);
-    g.speed += (G.dot(g.dir) - fr) * dt;
+    // switch grinds when the stick asks for a different one
+    const want = g.t > 0.18 ? this._wantedGrind(g, input) : null;
+    if (want && want !== g.type) {
+      if (g.pending === want) g.pendingT += dt;
+      else {
+        g.pending = want;
+        g.pendingT = 0;
+      }
+      if (g.pendingT > 0.1) {
+        const before = this._visualSnapBegin();
+        g.type = want;
+        if (g.chain.length < 4) g.chain.push(want);
+        g.pending = null;
+        this._placeOnRail();
+        this._visualSnapEnd(before, 18);
+        this.emit(GRINDS[want].slide ? 'slideStart' : 'grindStart', { kind: g.kind, switch: true });
+      }
+    } else g.pending = null;
+    const fr = (RAIL_KINDS[g.kind]?.friction ?? 0.8) * spec.fr;
+    g.speed += (G.dot(g.dir) - fr * Math.sign(g.speed || 1)) * dt;
     g.c.addScaledVector(g.dir, g.speed * dt);
     this.vel.copy(g.dir).multiplyScalar(g.speed);
     this._placeOnRail();
-    this.wheelSpin += g.slide ? 0 : (g.speed * dt) / BOARD.wheelRadius * 0.2;
+    this.wheelSpin += spec.slide ? 0 : ((g.speed * dt) / BOARD.wheelRadius) * 0.15;
     const ab = _v1.subVectors(g.rail.b, g.rail.a);
     const t = _v2.subVectors(g.c, g.rail.a).dot(ab) / ab.lengthSq();
     if (t < 0 || t > 1) return this._endGrind(true);
-    if (g.speed < 0.25) {
-      // ran out of speed: drop off the side
-      const off = this.side(_v1).multiplyScalar(0.8 * (Math.random() < 0.5 ? 1 : -1));
-      this.vel.add(off);
+    if (g.speed < 0.3) {
+      // ran out of speed: drop off the side you came from
+      this.vel.addScaledVector(g.approach, 0.9);
       return this._endGrind(true);
     }
   }
@@ -863,11 +1038,11 @@ export class SkaterController {
     const g = this.grind;
     if (!g) return;
     this.railCooldown.set(g.rail, 0.35);
-    if (g.t > 0.15) this._trickCallout(g.name, 'clean');
+    if (g.t > 0.12) this._trickCallout(this.grindName, 'clean');
     this.emit('grindEnd');
     this.grind = null;
     this.exitTurn = 0;
-    if (g.slide) {
+    if (GRINDS[g.type]?.slide) {
       // shoulders turn back to ride away forward/fakie out of slides
       const f = this.fwd(_v1);
       const d = g.dir;
@@ -878,12 +1053,24 @@ export class SkaterController {
     if (toAir) {
       this.mode = 'air';
       this.airTime = 0.05;
-      this.popped = false;
-      this.airTrickName = null;
+      this._resetAirNaming();
       this.landingNormal.copy(Y);
       this.predictT = 0;
-      // re-level the rider up axis
     }
+  }
+
+  // ---- visual smoothing: discrete snaps (rail lock, grind switches) blend over a few frames ----
+  _visualSnapBegin() {
+    return this.boardMatrix(new THREE.Matrix4());
+  }
+
+  _visualSnapEnd(before, rate = 22) {
+    const after = this.boardMatrix(new THREE.Matrix4(), true);
+    const local = after.clone().invert().multiply(before);
+    const sc = new THREE.Vector3();
+    local.decompose(this.vis.pos, this.vis.quat, sc);
+    this.vis.rate = rate;
+    this.vis.active = true;
   }
 
   // ---------------------------------------------------------------------------------------
@@ -997,17 +1184,23 @@ export class SkaterController {
     return target.compose(this.pos, this.quat, _v1.set(1, 1, 1));
   }
 
-  boardMatrix(target) {
+  // World matrix of the board. noVis skips the snap-smoothing offset (used to measure snaps).
+  boardMatrix(target, noVis = false) {
     if (this.mode === 'bail') return target.compose(this.board.pos, this.board.quat, _v1.set(1, 1, 1));
     this.riderMatrix(target);
     const local = _m2.identity();
     const t = new THREE.Matrix4();
-    // powerslide: board + rider turned sideways (visual)
+    const tmp = new THREE.Matrix4();
+    // trucks/bushings compress on landings and when loading the pop
+    const sy = this.susp.y - (this.mode === 'ground' ? this.crouch * 0.01 : 0);
+    if (sy) local.multiply(t.makeTranslation(0, sy, 0));
+    if (this.wobble > 0.002) local.multiply(tmp.makeRotationY(this.wobble * Math.sin(this.time * 19)));
     // trick rotations about the board's center
     let pitch = 0;
     let shove = 0;
     let flip = 0;
     let lift = 0;
+    let imp = 0;
     // ollie pop pitch: tail strike then level out
     if (this.popT < 0.4) {
       const tt = this.popT;
@@ -1019,36 +1212,49 @@ export class SkaterController {
       const ph = tr.vt / tr.T;
       flip = tr.flipPer * ph;
       shove = tr.shovePer * ph;
+      imp = tr.impPer * ph;
       lift = Math.min(1, tr.vt / 0.12) * 0.1 * (tr.caught ? Math.max(0, 1 - (tr.t - tr.catchT) / 0.15) : 1);
     }
     if (this.mode === 'ground' && this.manual) {
       const pz = this.manual > 0 ? -BOARD.truckAxleZ : BOARD.truckAxleZ;
       const a = this.manual > 0 ? -0.2 : 0.2;
-      local.multiply(t.makeTranslation(0, BOARD.wheelRadius, pz)).multiply(new THREE.Matrix4().makeRotationX(a)).multiply(new THREE.Matrix4().makeTranslation(0, -BOARD.wheelRadius, -pz));
+      local.multiply(t.makeTranslation(0, BOARD.wheelRadius, pz)).multiply(tmp.makeRotationX(a)).multiply(t.makeTranslation(0, -BOARD.wheelRadius, -pz));
     }
     if (this.mode === 'grind' && this.grind) {
-      const ty = this.grind.type;
-      let a = 0;
-      if (ty === 'Nosegrind' || ty === 'Crooked Grind') a = 0.22;
-      if (ty === '5-0' || ty === 'Smith Grind' || ty === 'Feeble Grind') a = -0.22;
-      if (ty === 'Noseslide') a = 0.12;
-      if (ty === 'Tailslide') a = -0.12;
-      if (a) local.multiply(new THREE.Matrix4().makeRotationX(a));
+      const g = this.grind;
+      const spec = GRINDS[g.type] || GRINDS['50-50'];
+      const side = Math.sign(g.approach.dot(this.side(_v1))) || 1;
+      const sway = Math.sin(this.time * 7.3) * 0.02 + Math.sin(this.time * 12.1) * 0.008;
+      local
+        .multiply(t.makeTranslation(0, spec.h, spec.z))
+        .multiply(tmp.makeRotationY((spec.yaw || 0) * side))
+        .multiply(tmp.makeRotationX(spec.pitch || 0))
+        .multiply(tmp.makeRotationZ((spec.roll || 0) * side + sway))
+        .multiply(t.makeTranslation(0, -spec.h, -spec.z));
     }
     if (this.mode === 'ground') {
       // carve: deck rolls into the turn
-      local.multiply(new THREE.Matrix4().makeRotationZ(-this.lean * 0.09));
+      local.multiply(tmp.makeRotationZ(-this.lean * 0.1));
     }
+    const py = BOARD.pivotY;
     if (pitch || shove || flip || lift) {
-      const py = BOARD.pivotY;
       local
         .multiply(t.makeTranslation(0, py + lift, 0))
-        .multiply(new THREE.Matrix4().makeRotationX(pitch))
-        .multiply(new THREE.Matrix4().makeRotationY(shove))
-        .multiply(new THREE.Matrix4().makeRotationZ(flip))
-        .multiply(new THREE.Matrix4().makeTranslation(0, -py, 0));
+        .multiply(tmp.makeRotationX(pitch))
+        .multiply(tmp.makeRotationY(shove))
+        .multiply(tmp.makeRotationZ(flip))
+        .multiply(t.makeTranslation(0, -py, 0));
     }
-    if (this.slide > 0.01) local.premultiply(new THREE.Matrix4().makeRotationY(this.slide * 1.25 * this.heelSign));
+    if (imp) {
+      // impossible: end over end, wrapped around the back foot
+      local.multiply(t.makeTranslation(0, py, BOARD.backFootZ)).multiply(tmp.makeRotationX(imp)).multiply(t.makeTranslation(0, -py, -BOARD.backFootZ));
+    }
+    if (this.grabTw.r || this.grabTw.p) {
+      local.multiply(t.makeTranslation(0, py, 0)).multiply(tmp.makeRotationX(this.grabTw.p)).multiply(tmp.makeRotationZ(this.grabTw.r)).multiply(t.makeTranslation(0, -py, 0));
+    }
+    if (this.revertVis) local.premultiply(tmp.makeRotationY(this.revertVis));
+    if (this.slide > 0.01) local.premultiply(tmp.makeRotationY(this.slide * 1.25 * this.heelSign));
+    if (!noVis && this.vis.active) local.multiply(t.compose(this.vis.pos, this.vis.quat, _v1.set(1, 1, 1)));
     return target.multiply(local);
   }
 
