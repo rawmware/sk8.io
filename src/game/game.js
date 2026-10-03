@@ -125,6 +125,7 @@ export class Game {
     this.input.mouseSensitivity = this.settings.mouseSensitivity;
     this.input.invertFlickY = this.settings.invertFlickY;
     this.dropper = new Dropper(this.world, this.collision, this.scene);
+
     this.audio = createAudio();
     this.audio.setVolumes({ master: this.settings.masterVolume, sfx: this.settings.sfxVolume, music: this.settings.musicVolume });
 
@@ -135,6 +136,7 @@ export class Game {
       appearance: this.appearance,
       board: this.boardCfg,
       settings: this.settings,
+      audio: this.audio,
       previewHooks: {
         enter: () => (this.previewing = true),
         exit: () => (this.previewing = false),
@@ -215,8 +217,17 @@ export class Game {
       this.audio.setVolumes({ master: this.settings.masterVolume, sfx: this.settings.sfxVolume, music: this.settings.musicVolume });
       this._applyQuality();
     });
-    ui.on('back', () => {
-      if (this.mode === 'customize') this.closeCustomize();
+    // the UI switches its own screens (back buttons, Esc); keep the game mode in sync
+    ui.on('screen', (name, prev) => {
+      if (name === 'title') this.mode = 'title';
+      else if (name === 'paused') this.mode = 'paused';
+      else if (name === 'customize') this.mode = 'customize';
+      else if ((name === 'controls' || name === 'settings') && this.mode !== 'title') this.mode = 'paused';
+      if (name !== 'playing' && name !== 'dropper') {
+        this.input.mouseEnabled = false;
+        this.input.exitPointerLock();
+      }
+      if (prev === 'customize' && name !== 'customize') this.previewing = false;
     });
   }
 
@@ -330,7 +341,8 @@ export class Game {
 
     // ---- global menu navigation (gamepad / arrows) ----
     if (this.mode !== 'playing' && this.mode !== 'dropper') {
-      if (inp.nav) ui.navigate?.(inp.nav);
+      if (inp.nav && this.input.lastDevice === 'gamepad') ui.navigate?.(inp.nav);
+      if (this.mode === 'customize' && inp.rotate && this.input.lastDevice === 'gamepad') ui.navigate?.(inp.rotate > 0 ? 'prevTab' : 'nextTab');
       if (inp.navStart && this.mode === 'paused') this.play();
     }
 
@@ -362,14 +374,12 @@ export class Game {
         _v2.set(c.x, c.y + 0.95, c.z);
         this.camera.lookAt(_v2);
         this._animateSkater(dt, true);
-        if (inp.pause && !ui.handlesEscape) this.closeCustomize();
         break;
       }
       default: {
         // title / paused: gentle orbit around the skater
         if (this.mode === 'title') this.rig.orbit(dt, this.controller.pos, 6.5, 1.9, 0.1);
         this._animateSkater(dt, true);
-        if (this.mode === 'paused' && inp.pause && !ui.handlesEscape) this.play();
       }
     }
 
@@ -460,7 +470,7 @@ export class Game {
     ui.setHud?.({ speedKmh: c.speed * 3.6, gamepad: this.input.gamepadConnected, marker: !!c.marker });
     if (this.settings.gestureGuide) {
       const f = inp.flick;
-      ui.setFlickStick?.({ x: f.x, y: f.y, loaded: c.flick.loaded });
+      ui.setFlickStick?.({ x: f.x, y: -f.y, loaded: c.flick.loaded });
     }
     if (this.hintTimer > 0) {
       this.hintTimer -= dt;
