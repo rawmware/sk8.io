@@ -1,0 +1,17 @@
+// Inline SVG icon strings (original artwork, stroke = currentColor).
+
+export const ICONS = {
+  gamepad: `<svg viewBox="0 0 32 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M9 2h14c4 0 6.5 3 7.4 8.6.7 4.4-.6 8.4-3.6 8.4-2.4 0-3.6-3.4-5.8-3.4h-10c-2.2 0-3.4 3.4-5.8 3.4-3 0-4.3-4-3.6-8.4C2.5 5 5 2 9 2Z"/><path d="M9 7v6M6 10h6" stroke-linecap="round"/><circle cx="21.5" cy="8.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="24.5" cy="11.5" r="1.2" fill="currentColor" stroke="none"/></svg>`,
+  marker: `<svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M10 22s7-7.2 7-12.6A7 7 0 0 0 3 9.4C3 14.8 10 22 10 22Z"/><circle cx="10" cy="9.5" r="2.6" fill="currentColor" stroke="none"/></svg>`,
+  mouse: `<svg viewBox="0 0 18 26" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1.5" y="1.5" width="15" height="23" rx="7.5"/><path d="M9 1.5v8M1.5 9.5h15" /></svg>`,
+  mouseL: `<svg viewBox="0 0 18 26" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 1.5A7.5 7.5 0 0 0 1.5 9v.5H9Z" fill="currentColor"/><rect x="1.5" y="1.5" width="15" height="23" rx="7.5"/><path d="M9 1.5v8M1.5 9.5h15"/></svg>`,
+  mouseR: `<svg viewBox="0 0 18 26" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 1.5A7.5 7.5 0 0 1 16.5 9v.5H9Z" fill="currentColor"/><rect x="1.5" y="1.5" width="15" height="23" rx="7.5"/><path d="M9 1.5v8M1.5 9.5h15"/></svg>`,
+  dice: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15.5" r="1.4" fill="currentColor" stroke="none"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"/></svg>`,
+  rotate: `<svg viewBox="0 0 48 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4.5C12 2 36 2 42 4.5"/><path d="M38 1.8l4.2 2.7-3.6 3.4"/><path d="M42 11.5C36 14 12 14 6 11.5"/><path d="M10 14.2l-4.2-2.7 3.6-3.4"/></svg>`,
+  pin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>`,
+  dpadUp: `<svg viewBox="0 0 24 24"><path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.4 2.4h5.2v6.6H9.4Z" fill="currentColor"/></svg>`,
+  dpadDown: `<svg viewBox="0 0 24 24"><path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.4 15h5.2v6.6H9.4Z" fill="currentColor"/></svg>`,
+  view: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="11" height="9" rx="1.5"/><rect x="10" y="10" width="11" height="9" rx="1.5" fill="currentColor"/></svg>`,
+  menu: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h14"/></svg>`,
+};

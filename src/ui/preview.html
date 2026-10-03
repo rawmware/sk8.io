@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SK8.IO UI Preview</title>
+  <link rel="icon" href="data:," />
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b0b0d; overflow: hidden; }
+    #bg { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+    #skater {
+      position: fixed; left: 50%; top: 50%; width: 220px; height: 520px; margin: -250px 0 0 -110px;
+      display: none; transform-style: preserve-3d; perspective: 900px; pointer-events: none;
+    }
+    #skater.on { display: block; }
+    #skater .fig { width: 100%; height: 100%; transition: transform 0.05s linear; }
+    #tp {
+      position: fixed; right: 12px; top: 12px; z-index: 100; width: 330px; max-height: calc(100vh - 24px); overflow: auto;
+      background: rgba(20, 22, 28, 0.94); color: #ddd; font: 12px/1.35 system-ui, sans-serif; border-radius: 10px;
+      box-shadow: 0 10px 40px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.08); padding: 10px 12px;
+    }
+    #tp.hidden { display: none; }
+    #tp h5 { margin: 10px 0 5px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #ff8a5a; }
+    #tp button { background: #2b2f38; color: #eee; border: 0; border-radius: 5px; padding: 4px 7px; margin: 0 3px 4px 0; cursor: pointer; font: inherit; }
+    #tp button:hover { background: #3a404c; }
+    #tp label { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+    #tp input[type=range] { flex: 1; }
+    #tp select { background: #2b2f38; color: #eee; border: 0; border-radius: 4px; padding: 2px; }
+    #tp .log { font: 11px/1.3 ui-monospace, monospace; color: #9ab; max-height: 90px; overflow: auto; white-space: pre-wrap; background: #111317; padding: 4px 6px; border-radius: 5px; }
+    #tpToggle { position: fixed; right: 12px; bottom: 12px; z-index: 101; background: #ff5a1f; color: #111; border: 0; border-radius: 6px; padding: 6px 10px; font: 600 12px system-ui; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <canvas id="bg"></canvas>
+  <div id="skater"><svg class="fig" viewBox="0 0 220 520"><g fill="#d8d3c8" opacity=".22">
+    <circle cx="110" cy="62" r="34"/><rect x="72" y="104" width="76" height="150" rx="26"/><rect x="40" y="112" width="26" height="130" rx="13"/>
+    <rect x="154" y="112" width="26" height="130" rx="13"/><rect x="78" y="246" width="28" height="200" rx="14"/><rect x="114" y="246" width="28" height="200" rx="14"/>
+    <rect x="20" y="470" width="180" height="16" rx="8"/><circle cx="52" cy="496" r="11"/><circle cx="168" cy="496" r="11"/></g></svg></div>
+  <div id="ui"></div>
+  <div id="tp"></div>
+  <button id="tpToggle">TEST PANEL</button>
+  <script type="module" src="./preview.js"></script>
+</body>
+</html>
