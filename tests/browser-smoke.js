@@ -1,0 +1,42 @@
+// Run against the production build using agent-browser eval --stdin.
+// This exercises public UI/input events; it does not mutate the simulation directly.
+(async () => {
+  const checks = [], wait = ms => new Promise(r => setTimeout(r, ms));
+  const check = (ok, description) => { if (!ok) throw new Error(description); checks.push(description); };
+  const q = s => document.querySelector(s), snapshot = () => window.sk8.snapshot();
+  const key = (type, code) => document.body.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true }));
+  if (q('#menu-dialog').open) q('#close-menu').click();
+  if (!snapshot().started) q('#start-button').click();
+  q('#reset-button').click();
+  key('keydown', 'KeyW'); await wait(1200); key('keyup', 'KeyW');
+  check(snapshot().speed > 2 && snapshot().z > -20, 'Keyboard push moves the board');
+  key('keydown', 'Space'); await wait(650); key('keyup', 'Space'); await wait(60);
+  key('keydown', 'KeyJ'); key('keyup', 'KeyJ'); await wait(1050);
+  check(snapshot().landed >= 1 && snapshot().combo >= 350, 'Charged ollie plus kickflip lands and scores');
+  q('#pause-button').click(); const before = snapshot().z; await wait(250);
+  check(snapshot().paused && Math.abs(snapshot().z - before) < .001, 'Pause stops simulation');
+  q('#tab-garage').click(); q('[data-deck="#70b6c8"]').click();
+  check(snapshot().settings.deck === '#70b6c8' && JSON.parse(localStorage.getItem('sk8.settings.v1')).deck === '#70b6c8', 'Deck customization updates and persists');
+  q('#tab-session').click(); q('#spawn-select').value = 'street'; q('#change-spot').click(); await wait(100);
+  check(snapshot().x === 17 && snapshot().z === -19 && !snapshot().paused, 'Reset spot changes through the menu');
+  q('#build-button').click(); q('#object-type').value = 'rail'; q('#object-distance').value = '4'; q('#object-offset').value = '-6'; q('#object-offset').dispatchEvent(new Event('input'));
+  const objects = snapshot().customObstacles;
+  check(!q('#place-object').disabled, 'Editor accepts an unobstructed placement'); q('#place-object').click();
+  check(snapshot().customObstacles === objects + 1 && JSON.parse(localStorage.getItem('sk8.obstacles.v1')).length === objects + 1, 'Obstacle placement updates the park and saves');
+  q('#undo-object').click(); check(snapshot().customObstacles === objects, 'Undo removes the last obstacle'); q('#close-builder').click();
+  q('#pause-button').click(); q('#spawn-select').value = 'plaza'; q('#change-spot').click(); await wait(100);
+  const originalPads = navigator.getGamepads;
+  const buttons = Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 }));
+  const pad = { id: 'Test standard gamepad', connected: true, mapping: 'standard', index: 0, axes: [0, 0, 0, 0], buttons };
+  Object.defineProperty(navigator, 'getGamepads', { configurable: true, value: () => [pad] });
+  buttons[0].pressed = true; await wait(1000); buttons[0].pressed = false;
+  check(snapshot().controller === pad.id && snapshot().speed > 2, 'Standard gamepad A pushes');
+  buttons[7].pressed = true; await wait(650); buttons[7].pressed = false; await wait(60); buttons[2].pressed = true; await wait(60); buttons[2].pressed = false; await wait(1000);
+  check(snapshot().combo >= 350 && snapshot().bailTime === 0, 'Gamepad RT release and X execute a landed kickflip');
+  buttons[9].pressed = true; await wait(80); buttons[9].pressed = false;
+  check(snapshot().paused, 'Gamepad Menu pauses');
+  Object.defineProperty(navigator, 'getGamepads', { configurable: true, value: originalPads });
+  q('#tab-garage').click(); q('[data-deck="#c7f35e"]').click(); q('#close-menu').click(); q('#reset-button').click();
+  check(document.documentElement.scrollWidth <= innerWidth, 'No horizontal page overflow');
+  return { checks, snapshot: snapshot() };
+})();
